@@ -1,6 +1,8 @@
 import os
 import platform
 import subprocess
+import json
+import urllib.request
 from datetime import datetime, timedelta
 
 
@@ -71,11 +73,43 @@ def etat_gpu() -> list[dict]:
     return gpu
 
 
+def etat_ollama() -> dict:
+    base_url = "http://127.0.0.1:11434"
+
+    with urllib.request.urlopen(
+        f"{base_url}/api/version",
+        timeout=5,
+    ) as reponse:
+        version = json.load(reponse)["version"]
+
+    with urllib.request.urlopen(
+        f"{base_url}/api/tags",
+        timeout=5,
+    ) as reponse:
+        modeles = json.load(reponse)["models"]
+
+    with urllib.request.urlopen(
+        f"{base_url}/api/ps",
+        timeout=5,
+    ) as reponse:
+        modeles_actifs = json.load(reponse)["models"]
+
+    return {
+        "disponible": True,
+        "version": version,
+        "modeles": [modele["name"] for modele in modeles],
+        "modeles_actifs": [
+            modele["name"] for modele in modeles_actifs
+        ],
+    }
+
+
 OUTILS = {
     "heure_actuelle": heure_actuelle,
     "heure_dans": heure_dans,
     "etat_systeme": etat_systeme,
     "etat_gpu": etat_gpu,
+    "etat_ollama": etat_ollama,
 }
 
 DEFINITIONS_OUTILS = [
@@ -125,6 +159,18 @@ DEFINITIONS_OUTILS = [
         "function": {
             "name": "etat_gpu",
             "description": "Retourne l état des GPU NVIDIA visibles par le système.",
+            "parameters": {
+                "type": "object",
+                "properties": {},
+                "required": [],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "etat_ollama",
+            "description": "Retourne l état du serveur Ollama, les modèles disponibles et les modèles actuellement actifs.",
             "parameters": {
                 "type": "object",
                 "properties": {},
