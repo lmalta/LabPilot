@@ -4,15 +4,10 @@ import urllib.request
 from .configuration import OLLAMA_MODEL, OLLAMA_URL
 
 
-def interroger_ollama(message: str) -> str:
+def interroger_ollama(messages: list[dict[str, str]]) -> str:
     payload = {
         "model": OLLAMA_MODEL,
-        "messages": [
-            {
-                "role": "user",
-                "content": message,
-            }
-        ],
+        "messages": messages,
         "stream": False,
         "think": False,
     }

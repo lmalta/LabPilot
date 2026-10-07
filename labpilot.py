@@ -1,8 +1,9 @@
-from labpilot.ollama import interroger_ollama
+from labpilot.agent import Agent
 
 
 def main() -> None:
-    reponse = interroger_ollama(
+    agent = Agent()
+    reponse = agent.executer(
         "Réponds simplement : LabPilot fonctionne."
     )
     print(reponse)

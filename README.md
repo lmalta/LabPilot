@@ -294,12 +294,37 @@ L'objectif n'est donc pas simplement de créer un chatbot capable de répondre �
 
 ## 📌 État actuel
 
-LabPilot est actuellement au tout début de son développement.
+LabPilot dispose maintenant de son premier socle fonctionnel.
 
-La première étape consiste à construire un agent simple, local et en lecture seule avant d'ajouter progressivement des intégrations et des capacités d'action.
+Le projet sait actuellement :
 
-La documentation sera mise à jour au fur et à mesure du développement.
+- charger sa configuration depuis un fichier `.env` ;
+- définir l'URL et le modèle Ollama utilisés ;
+- communiquer avec l'API `/api/chat` d'Ollama ;
+- encapsuler la communication avec le LLM dans un module dédié ;
+- maintenir un historique de conversation dans un objet `Agent` ;
+- transmettre cet historique au LLM à chaque nouvelle requête ;
+- conserver les réponses du LLM dans l'historique ;
+- exécuter une première boucle simple utilisateur → agent → LLM → réponse.
 
+L'architecture commence également à être séparée en plusieurs responsabilités :
+
+```text
+labpilot.py
+    ↓
+Agent
+    ↓
+Ollama
+    ↓
+LLM local
+
+avec une configuration indépendante :
+
+.env
+    ↓
+configuration.py
+    ↓
+Agent / Ollama
 ---
 
 ## 📄 Licence
