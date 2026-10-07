@@ -34,29 +34,26 @@ class Agent:
             }
         )
 
-        reponse = interroger_ollama(self.historique)
+        for _ in range(10):
+            reponse = interroger_ollama(self.historique)
 
-        self.historique.append(reponse)
+            self.historique.append(reponse)
 
-        if "tool_calls" not in reponse:
-            return reponse["content"]
+            if "tool_calls" not in reponse:
+                return reponse["content"]
 
-        tool_call = reponse["tool_calls"][0]
-        resultat = executer_outil(tool_call)
+            for tool_call in reponse["tool_calls"]:
+                resultat = executer_outil(tool_call)
 
-        if not isinstance(resultat, str):
-            resultat = json.dumps(resultat, ensure_ascii=False)
+                if not isinstance(resultat, str):
+                    resultat = json.dumps(resultat, ensure_ascii=False)
 
-        self.historique.append(
-            {
-                "role": "tool",
-                "tool_name": tool_call["function"]["name"],
-                "content": resultat,
-            }
-        )
+                self.historique.append(
+                    {
+                        "role": "tool",
+                        "tool_name": tool_call["function"]["name"],
+                        "content": resultat,
+                    }
+                )
 
-        reponse_finale = interroger_ollama(self.historique)
-
-        self.historique.append(reponse_finale)
-
-        return reponse_finale["content"]
+        return "Le nombre maximal d appels d outils a été atteint."

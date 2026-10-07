@@ -191,7 +191,7 @@ L'objectif est de conserver un projet :
 - [ ] Créer l'outil d'état du GPU
 - [ ] Créer l'outil d'état d'Ollama
 - [ ] Tester le raisonnement à partir des résultats
-- [ ] Gérer plusieurs appels d'outils successifs
+- [x] Gérer plusieurs appels d'outils successifs
 - [ ] Gérer les erreurs d'exécution des outils
 - [ ] Empêcher les boucles d'appels d'outils incontrôlées
 
@@ -332,6 +332,8 @@ Le projet sait actuellement :
 - exécuter l'outil correspondant ;
 - transmettre le résultat de l'outil au LLM ;
 - générer une réponse finale à partir du résultat obtenu ;
+- gérer plusieurs appels d'outils dans une même réponse du modèle ;
+- enchaîner plusieurs séries d'appels d'outils jusqu'à obtenir une réponse finale ;
 - conserver les appels d'outils et leurs résultats dans l'historique ;
 - présenter les résultats techniques de manière naturelle à l'utilisateur.
 
@@ -397,11 +399,11 @@ Cette étape valide le principe fondamental de LabPilot : le modèle peut décid
 
 ### Prochaine étape
 
-La prochaine évolution consiste à rendre le mécanisme d'outils plus robuste avant d'intégrer de véritables outils de supervision.
+Le mécanisme d'outils permet désormais de gérer plusieurs appels successifs avant de produire la réponse finale.
+La prochaine évolution consiste à le rendre plus robuste avant d'intégrer de véritables outils de supervision.
 
 Les prochaines étapes seront notamment :
 
-- gérer plusieurs appels d'outils successifs ;
 - gérer les erreurs d'exécution ;
 - limiter les boucles d'appels ;
 - créer l'outil d'état du GPU ;
