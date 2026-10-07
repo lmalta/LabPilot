@@ -2,12 +2,14 @@ import json
 import urllib.request
 
 from .configuration import OLLAMA_MODEL, OLLAMA_URL
+from .tools import DEFINITIONS_OUTILS
 
 
-def interroger_ollama(messages: list[dict[str, str]]) -> str:
+def interroger_ollama(messages: list[dict[str, str]]) -> dict:
     payload = {
         "model": OLLAMA_MODEL,
         "messages": messages,
+        "tools": DEFINITIONS_OUTILS,
         "stream": False,
         "think": False,
     }
@@ -22,4 +24,4 @@ def interroger_ollama(messages: list[dict[str, str]]) -> str:
     with urllib.request.urlopen(request) as response:
         result = json.loads(response.read().decode("utf-8"))
 
-    return result["message"]["content"]
+    return result["message"]

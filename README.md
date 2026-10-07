@@ -170,19 +170,30 @@ L'objectif est de conserver un projet :
 - [x] Définir le nom du projet
 - [x] Définir le périmètre initial
 - [x] Définir les principes de sécurité
-- [ ] Créer la structure de l'agent
-- [ ] Définir la gestion de la configuration
-- [ ] Mettre en place la communication avec le modèle IA
+- [x] Créer la structure initiale du projet
+- [x] Mettre en place la gestion de la configuration
+- [x] Mettre en place la communication avec le modèle IA local
+- [x] Séparer la logique de l'agent de la communication avec Ollama
+- [x] Mettre en place un historique de conversation
 
 ### Phase 2 — Premier agent en lecture seule
 
-- [ ] Mettre en place la boucle de fonctionnement de l'agent
-- [ ] Mettre en place l'exécution des outils
+- [x] Mettre en place la boucle de fonctionnement de l'agent
+- [x] Définir le mécanisme de déclaration des outils
+- [x] Permettre au modèle de demander l'utilisation d'un outil
+- [x] Mettre en place l'exécution des outils
+- [x] Permettre la transmission d'arguments aux outils
+- [x] Renvoyer le résultat d'un outil au modèle
+- [x] Générer une réponse finale à partir du résultat de l'outil
+- [x] Tester le choix automatique des outils
+- [x] Tester le fonctionnement des outils avec l'historique de conversation
 - [ ] Créer l'outil d'état du système
 - [ ] Créer l'outil d'état du GPU
 - [ ] Créer l'outil d'état d'Ollama
-- [ ] Tester le choix automatique des outils
 - [ ] Tester le raisonnement à partir des résultats
+- [ ] Gérer plusieurs appels d'outils successifs
+- [ ] Gérer les erreurs d'exécution des outils
+- [ ] Empêcher les boucles d'appels d'outils incontrôlées
 
 ### Phase 3 — Intégration du Homelab
 
@@ -215,18 +226,28 @@ L'objectif est de conserver un projet :
 
 ## 📁 Structure du projet
 
-La structure initiale sera volontairement réduite.
+La structure actuelle du projet est volontairement réduite.
 
-Elle évoluera avec les fonctionnalités du projet.
+Elle évoluera progressivement avec les fonctionnalités de LabPilot.
 
 ```text
 LabPilot/
+├── labpilot.py
 ├── README.md
-├── .gitignore
-├── agent/
-├── tests/
-└── ...
+├── requirements.txt
+└── labpilot/
+    ├── __init__.py
+    ├── configuration.py
+    ├── ollama.py
+    ├── agent.py
+    └── tools.py
 ```
+
+- labpilot.py : point d'entrée de l'application ;
+- configuration.py : chargement de la configuration ;
+- ollama.py : communication avec l'API Ollama ;
+- agent.py : logique principale de l'agent ;
+- tools.py : déclaration et exécution des outils disponibles.
 
 ---
 
@@ -294,7 +315,7 @@ L'objectif n'est donc pas simplement de créer un chatbot capable de répondre �
 
 ## 📌 État actuel
 
-LabPilot dispose maintenant de son premier socle fonctionnel.
+LabPilot dispose maintenant de son premier socle fonctionnel et de son premier mécanisme d'utilisation d'outils.
 
 Le projet sait actuellement :
 
@@ -305,27 +326,76 @@ Le projet sait actuellement :
 - maintenir un historique de conversation dans un objet `Agent` ;
 - transmettre cet historique au LLM à chaque nouvelle requête ;
 - conserver les réponses du LLM dans l'historique ;
-- exécuter une première boucle simple utilisateur → agent → LLM → réponse.
+- déclarer des outils utilisables par le modèle ;
+- détecter lorsqu'Ollama demande l'utilisation d'un outil ;
+- récupérer les arguments transmis par le modèle ;
+- exécuter l'outil correspondant ;
+- transmettre le résultat de l'outil au LLM ;
+- générer une réponse finale à partir du résultat obtenu ;
+- conserver les appels d'outils et leurs résultats dans l'historique ;
+- présenter les résultats techniques de manière naturelle à l'utilisateur.
 
-L'architecture commence également à être séparée en plusieurs responsabilités :
+Un premier ensemble d'outils simples permet actuellement de travailler avec l'heure courante et de calculer une heure future.
+
+L'architecture actuelle est organisée autour de plusieurs responsabilités :
 
 ```text
 labpilot.py
     ↓
 Agent
+    ├── Historique
+    ├── Décision d'utilisation d'un outil
+    └── Exécution des outils
+            ↓
+        tools.py
+            ↓
+        Outil
+            ↓
+        Résultat
+            ↓
+        Ollama
+            ↓
+        Réponse finale
+```
+
+La communication avec le modèle reste séparée de la logique de l'agent :
+
+```text
+Agent
     ↓
-Ollama
+ollama.py
+    ↓
+API Ollama
     ↓
 LLM local
+```
 
-avec une configuration indépendante :
+et la configuration reste indépendante :
 
+```text
 .env
     ↓
 configuration.py
     ↓
 Agent / Ollama
+```
+
+Cette étape valide le principe fondamental de LabPilot : le modèle peut décider d'utiliser un outil, l'agent peut l'exécuter et le résultat peut être réinjecté dans le raisonnement du modèle.
+
+### Prochaine étape
+
+La prochaine évolution consiste à rendre le mécanisme d'outils plus robuste avant d'intégrer de véritables outils de supervision.
+
+Les prochaines étapes seront notamment :
+
+- gérer plusieurs appels d'outils successifs ;
+- gérer les erreurs d'exécution ;
+- limiter les boucles d'appels ;
+- créer les premiers outils de lecture de l'environnement ;
+- commencer par l'état du système avant d'intégrer progressivement le GPU, Ollama puis le Homelab.
+
 ---
+
 
 ## 📄 Licence
 
