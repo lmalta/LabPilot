@@ -1,0 +1,30 @@
+import json
+import urllib.request
+
+from .configuration import OLLAMA_MODEL, OLLAMA_URL
+
+
+def interroger_ollama(message: str) -> str:
+    payload = {
+        "model": OLLAMA_MODEL,
+        "messages": [
+            {
+                "role": "user",
+                "content": message,
+            }
+        ],
+        "stream": False,
+        "think": False,
+    }
+
+    request = urllib.request.Request(
+        f"{OLLAMA_URL}/api/chat",
+        data=json.dumps(payload).encode("utf-8"),
+        headers={"Content-Type": "application/json"},
+        method="POST",
+    )
+
+    with urllib.request.urlopen(request) as response:
+        result = json.loads(response.read().decode("utf-8"))
+
+    return result["message"]["content"]
