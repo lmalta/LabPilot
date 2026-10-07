@@ -86,6 +86,7 @@ Les premières capacités prévues sont :
 - état d'Ollama ;
 - modèles disponibles ;
 - informations générales sur l'environnement.
+- limiter le nombre de cycles successifs d'appels d'outils pour empêcher les boucles incontrôlées ;
 
 De nouvelles intégrations seront ajoutées progressivement.
 
@@ -193,7 +194,7 @@ L'objectif est de conserver un projet :
 - [ ] Tester le raisonnement à partir des résultats
 - [x] Gérer plusieurs appels d'outils successifs
 - [x] Gérer les erreurs d'exécution des outils
-- [ ] Empêcher les boucles d'appels d'outils incontrôlées
+- [x] Empêcher les boucles d'appels d'outils incontrôlées
 
 ### Phase 3 — Intégration du Homelab
 
@@ -404,7 +405,6 @@ Le mécanisme d'outils gère désormais les appels successifs et les erreurs d'e
 La prochaine évolution consiste à renforcer ses mécanismes de protection avant d'intégrer de véritables outils de supervision.
 
 Les prochaines étapes seront notamment :
-- limiter les boucles d'appels ;
 - créer l'outil d'état du GPU ;
 - créer l'outil d'état d'Ollama ;
 - tester le raisonnement à partir des résultats ;
