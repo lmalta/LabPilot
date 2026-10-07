@@ -89,6 +89,7 @@ Les premières capacités prévues sont :
 - limiter le nombre de cycles successifs d'appels d'outils pour empêcher les boucles incontrôlées ;
 - consulter l'état des GPU NVIDIA visibles par le système ;
 - consulter l'état du serveur Ollama, sa version, les modèles disponibles et les modèles actuellement actifs ;
+- interpréter les résultats des outils et les utiliser pour formuler une réponse ;
 
 De nouvelles intégrations seront ajoutées progressivement.
 
@@ -193,7 +194,7 @@ L'objectif est de conserver un projet :
 - [x] Créer l'outil d'état du système
 - [x] Créer l'outil d'état du GPU
 - [x] Créer l'outil d'état d'Ollama
-- [ ] Tester le raisonnement à partir des résultats
+- [x] Tester le raisonnement à partir des résultats
 - [x] Gérer plusieurs appels d'outils successifs
 - [x] Gérer les erreurs d'exécution des outils
 - [x] Empêcher les boucles d'appels d'outils incontrôlées
@@ -401,14 +402,13 @@ Agent / Ollama
 
 Cette étape valide le principe fondamental de LabPilot : le modèle peut décider d'utiliser un outil, l'agent peut l'exécuter et le résultat peut être réinjecté dans le raisonnement du modèle.
 
+Les tests montrent également que le modèle peut interpréter les résultats des outils et formuler une réponse contextualisée. Cette interprétation reste toutefois dépendante du raisonnement du modèle et peut être imparfaite.
+
 ### Prochaine étape
 
-Le mécanisme d'outils gère désormais les appels successifs et les erreurs d'exécution.
-La prochaine évolution consiste à renforcer ses mécanismes de protection avant d'intégrer de véritables outils de supervision.
+Le mécanisme d'outils gère désormais les appels successifs, les erreurs d'exécution, la protection contre les boucles incontrôlées et l'interprétation des résultats.
 
-Les prochaines étapes seront notamment :
-- tester le raisonnement à partir des résultats ;
-- renforcer progressivement la gestion des appels d'outils.
+La prochaine évolution consiste à intégrer progressivement de véritables outils de supervision du homelab.
 
 ---
 
