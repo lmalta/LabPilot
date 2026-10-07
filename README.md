@@ -87,6 +87,7 @@ Les premières capacités prévues sont :
 - modèles disponibles ;
 - informations générales sur l'environnement.
 - limiter le nombre de cycles successifs d'appels d'outils pour empêcher les boucles incontrôlées ;
+- consulter l'état des GPU NVIDIA visibles par le système ;
 
 De nouvelles intégrations seront ajoutées progressivement.
 
@@ -189,7 +190,7 @@ L'objectif est de conserver un projet :
 - [x] Tester le choix automatique des outils
 - [x] Tester le fonctionnement des outils avec l'historique de conversation
 - [x] Créer l'outil d'état du système
-- [ ] Créer l'outil d'état du GPU
+- [x] Créer l'outil d'état du GPU
 - [ ] Créer l'outil d'état d'Ollama
 - [ ] Tester le raisonnement à partir des résultats
 - [x] Gérer plusieurs appels d'outils successifs
@@ -405,7 +406,6 @@ Le mécanisme d'outils gère désormais les appels successifs et les erreurs d'e
 La prochaine évolution consiste à renforcer ses mécanismes de protection avant d'intégrer de véritables outils de supervision.
 
 Les prochaines étapes seront notamment :
-- créer l'outil d'état du GPU ;
 - créer l'outil d'état d'Ollama ;
 - tester le raisonnement à partir des résultats ;
 - renforcer progressivement la gestion des appels d'outils.

@@ -1,5 +1,6 @@
 import os
 import platform
+import subprocess
 from datetime import datetime, timedelta
 
 
@@ -32,10 +33,49 @@ def etat_systeme() -> dict:
         "load_average_15min": os.getloadavg()[2],
     }
 
+
+def etat_gpu() -> list[dict]:
+    commande = [
+        "nvidia-smi",
+        "--query-gpu=index,name,memory.total,memory.used,memory.free,"
+        "utilization.gpu,temperature.gpu,power.draw",
+        "--format=csv,noheader,nounits",
+    ]
+
+    resultat = subprocess.run(
+        commande,
+        capture_output=True,
+        text=True,
+        check=True,
+        timeout=5,
+    )
+
+    gpu = []
+
+    for ligne in resultat.stdout.strip().splitlines():
+        valeurs = [valeur.strip() for valeur in ligne.split(",")]
+
+        gpu.append(
+            {
+                "index": int(valeurs[0]),
+                "nom": valeurs[1],
+                "memoire_totale_mo": int(valeurs[2]),
+                "memoire_utilisee_mo": int(valeurs[3]),
+                "memoire_disponible_mo": int(valeurs[4]),
+                "utilisation_gpu_pourcent": int(valeurs[5]),
+                "temperature_c": int(valeurs[6]),
+                "consommation_w": float(valeurs[7]),
+            }
+        )
+
+    return gpu
+
+
 OUTILS = {
     "heure_actuelle": heure_actuelle,
     "heure_dans": heure_dans,
     "etat_systeme": etat_systeme,
+    "etat_gpu": etat_gpu,
 }
 
 DEFINITIONS_OUTILS = [
@@ -73,6 +113,18 @@ DEFINITIONS_OUTILS = [
         "function": {
             "name": "etat_systeme",
             "description": "Retourne l état actuel du système.",
+            "parameters": {
+                "type": "object",
+                "properties": {},
+                "required": [],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "etat_gpu",
+            "description": "Retourne l état des GPU NVIDIA visibles par le système.",
             "parameters": {
                 "type": "object",
                 "properties": {},
