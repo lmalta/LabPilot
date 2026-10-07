@@ -88,6 +88,7 @@ Les premières capacités prévues sont :
 - informations générales sur l'environnement.
 - limiter le nombre de cycles successifs d'appels d'outils pour empêcher les boucles incontrôlées ;
 - consulter l'état des GPU NVIDIA visibles par le système ;
+- consulter l'état du serveur Ollama, sa version, les modèles disponibles et les modèles actuellement actifs ;
 
 De nouvelles intégrations seront ajoutées progressivement.
 
@@ -191,7 +192,7 @@ L'objectif est de conserver un projet :
 - [x] Tester le fonctionnement des outils avec l'historique de conversation
 - [x] Créer l'outil d'état du système
 - [x] Créer l'outil d'état du GPU
-- [ ] Créer l'outil d'état d'Ollama
+- [x] Créer l'outil d'état d'Ollama
 - [ ] Tester le raisonnement à partir des résultats
 - [x] Gérer plusieurs appels d'outils successifs
 - [x] Gérer les erreurs d'exécution des outils
@@ -406,7 +407,6 @@ Le mécanisme d'outils gère désormais les appels successifs et les erreurs d'e
 La prochaine évolution consiste à renforcer ses mécanismes de protection avant d'intégrer de véritables outils de supervision.
 
 Les prochaines étapes seront notamment :
-- créer l'outil d'état d'Ollama ;
 - tester le raisonnement à partir des résultats ;
 - renforcer progressivement la gestion des appels d'outils.
 

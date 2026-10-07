@@ -1,6 +1,7 @@
+import json
 from unittest.mock import patch
 from labpilot.agent import Agent, MAX_CYCLES_OUTILS, executer_outil
-from labpilot.tools import etat_gpu
+from labpilot.tools import etat_gpu, etat_ollama
 
 
 def test_creation_agent():
@@ -112,4 +113,82 @@ def test_etat_gpu_erreur_nvidia_smi():
     assert resultat == {
         "erreur": "FileNotFoundError",
         "message": "nvidia-smi introuvable",
+    }
+
+
+def test_etat_ollama_erreur():
+    with patch(
+        "labpilot.tools.urllib.request.urlopen",
+        side_effect=ConnectionError("Ollama est inaccessible"),
+    ):
+        resultat = executer_outil(
+            {
+                "function": {
+                    "name": "etat_ollama",
+                    "arguments": {},
+                }
+            }
+        )
+
+    assert resultat == {
+        "erreur": "ConnectionError",
+        "message": "Ollama est inaccessible",
+    }
+
+
+def test_etat_ollama():
+    reponses = [
+        {"version": "0.34.2"},
+        {
+            "models": [
+                {"name": "qwen3-vl:8b"},
+                {"name": "qwen3:14b"},
+                {"name": "qwen3:8b"},
+            ]
+        },
+        {
+            "models": [
+                {"name": "qwen3:8b"},
+            ]
+        },
+    ]
+
+    def reponse_http(*args, **kwargs):
+        reponse = reponses.pop(0)
+
+        class Reponse:
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *args):
+                pass
+
+            def read(self):
+                return json.dumps(reponse).encode()
+
+        return Reponse()
+
+    with patch(
+        "labpilot.tools.urllib.request.urlopen",
+        side_effect=reponse_http,
+    ) as urlopen:
+        resultat = etat_ollama()
+
+    assert [appel.args[0] for appel in urlopen.call_args_list] == [
+        "http://127.0.0.1:11434/api/version",
+        "http://127.0.0.1:11434/api/tags",
+        "http://127.0.0.1:11434/api/ps",
+    ]
+
+    assert resultat == {
+        "disponible": True,
+        "version": "0.34.2",
+        "modeles": [
+            "qwen3-vl:8b",
+            "qwen3:14b",
+            "qwen3:8b",
+        ],
+        "modeles_actifs": [
+            "qwen3:8b",
+        ],
     }
