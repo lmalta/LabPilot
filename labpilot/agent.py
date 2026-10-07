@@ -3,12 +3,18 @@ from .ollama import interroger_ollama
 from .tools import OUTILS
 
 
-def executer_outil(tool_call: dict) -> str:
+def executer_outil(tool_call: dict) -> str | dict:
     nom_outil = tool_call["function"]["name"]
     arguments = tool_call["function"]["arguments"]
     outil = OUTILS[nom_outil]
 
-    return outil(**arguments)
+    try:
+        return outil(**arguments)
+    except Exception as erreur:
+        return {
+            "erreur": type(erreur).__name__,
+            "message": str(erreur),
+        }
 
 
 class Agent:
