@@ -1,3 +1,4 @@
+import json
 from .ollama import interroger_ollama
 from .tools import OUTILS
 
@@ -42,6 +43,9 @@ class Agent:
 
         tool_call = reponse["tool_calls"][0]
         resultat = executer_outil(tool_call)
+
+        if not isinstance(resultat, str):
+            resultat = json.dumps(resultat, ensure_ascii=False)
 
         self.historique.append(
             {

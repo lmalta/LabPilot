@@ -187,7 +187,7 @@ L'objectif est de conserver un projet :
 - [x] Générer une réponse finale à partir du résultat de l'outil
 - [x] Tester le choix automatique des outils
 - [x] Tester le fonctionnement des outils avec l'historique de conversation
-- [ ] Créer l'outil d'état du système
+- [x] Créer l'outil d'état du système
 - [ ] Créer l'outil d'état du GPU
 - [ ] Créer l'outil d'état d'Ollama
 - [ ] Tester le raisonnement à partir des résultats
@@ -335,7 +335,19 @@ Le projet sait actuellement :
 - conserver les appels d'outils et leurs résultats dans l'historique ;
 - présenter les résultats techniques de manière naturelle à l'utilisateur.
 
-Un premier ensemble d'outils simples permet actuellement de travailler avec l'heure courante et de calculer une heure future.
+Un premier ensemble d'outils permet actuellement de travailler avec l'heure courante, de calculer une heure future et d'obtenir l'état général du système.
+
+L'outil d'état du système fournit notamment :
+
+- le nom de la machine ;
+- le système d'exploitation ;
+- la version du noyau ;
+- l'architecture ;
+- le nombre de CPU ;
+- la mémoire totale et disponible ;
+- les charges moyennes du système sur 1, 5 et 15 minutes.
+
+Les charges moyennes correspondent au **load average Linux** et ne sont pas exprimées en pourcentage d'utilisation CPU.
 
 L'architecture actuelle est organisée autour de plusieurs responsabilités :
 
@@ -348,14 +360,15 @@ Agent
     └── Exécution des outils
             ↓
         tools.py
-            ↓
-        Outil
-            ↓
-        Résultat
-            ↓
-        Ollama
-            ↓
-        Réponse finale
+            ├── heure_actuelle
+            ├── heure_dans
+            └── etat_systeme
+                    ↓
+                 Résultat
+                    ↓
+                  Ollama
+                    ↓
+              Réponse finale
 ```
 
 La communication avec le modèle reste séparée de la logique de l'agent :
@@ -391,8 +404,10 @@ Les prochaines étapes seront notamment :
 - gérer plusieurs appels d'outils successifs ;
 - gérer les erreurs d'exécution ;
 - limiter les boucles d'appels ;
-- créer les premiers outils de lecture de l'environnement ;
-- commencer par l'état du système avant d'intégrer progressivement le GPU, Ollama puis le Homelab.
+- créer l'outil d'état du GPU ;
+- créer l'outil d'état d'Ollama ;
+- tester le raisonnement à partir des résultats ;
+- renforcer progressivement la gestion des appels d'outils.
 
 ---
 
