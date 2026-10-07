@@ -2,6 +2,7 @@ import json
 from .ollama import interroger_ollama
 from .tools import OUTILS
 
+MAX_CYCLES_OUTILS = 10
 
 def executer_outil(tool_call: dict) -> str | dict:
     nom_outil = tool_call["function"]["name"]
@@ -40,7 +41,7 @@ class Agent:
             }
         )
 
-        for _ in range(10):
+        for _ in range(MAX_CYCLES_OUTILS):
             reponse = interroger_ollama(self.historique)
 
             self.historique.append(reponse)
