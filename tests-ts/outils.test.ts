@@ -3,6 +3,8 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import { definitionsOutils } from "../src/labpilot.js";
+import type { ToolExecution, ToolResult } from "../src/types.js";
+import { executerOutil } from "../src/outils.js";
 
 const outilsAttendus = [
   "heure_actuelle",
@@ -69,4 +71,91 @@ test("le catalogue contient exactement les cinq outils attendus", () => {
     definitionsOutils.map((outil) => outil.function.name),
     outilsAttendus,
   );
+});
+
+test("une exécution d'outil peut contenir des arguments", () => {
+  const execution: ToolExecution = {
+    name: "heure_dans",
+    arguments: {
+      minutes: 30,
+    },
+  };
+
+  assert.equal(execution.name, "heure_dans");
+  assert.deepEqual(execution.arguments, {
+    minutes: 30,
+  });
+});
+
+test("un résultat d'outil peut représenter un succès", () => {
+  const resultat: ToolResult = {
+    success: true,
+    result: {
+      valeur: "résultat de test",
+    },
+  };
+
+  assert.equal(resultat.success, true);
+  assert.deepEqual(resultat.result, {
+    valeur: "résultat de test",
+  });
+});
+
+test("un résultat d'outil peut représenter une erreur", () => {
+  const resultat: ToolResult = {
+    success: false,
+    error: {
+      type: "ErreurTest",
+      message: "Erreur de test",
+    },
+  };
+
+  assert.equal(resultat.success, false);
+  assert.deepEqual(resultat.error, {
+    type: "ErreurTest",
+    message: "Erreur de test",
+  });
+});
+
+test("un outil connu peut être préparé pour exécution", () => {
+  const resultat = executerOutil({
+    name: "heure_actuelle",
+    arguments: {},
+  });
+
+  assert.equal(resultat.success, true);
+  assert.deepEqual(resultat.result, {
+    outil: "heure_actuelle",
+    arguments: {},
+  });
+});
+
+test("un outil connu conserve ses arguments", () => {
+  const resultat = executerOutil({
+    name: "heure_dans",
+    arguments: {
+      minutes: 30,
+    },
+  });
+
+  assert.equal(resultat.success, true);
+  assert.deepEqual(resultat.result, {
+    outil: "heure_dans",
+    arguments: {
+      minutes: 30,
+    },
+  });
+});
+
+test("un outil inconnu retourne une erreur", () => {
+  const resultat = executerOutil({
+    name: "outil_inexistant",
+    arguments: {},
+  });
+
+  assert.equal(resultat.success, false);
+  assert.deepEqual(resultat.error, {
+    type: "OutilInconnu",
+    message: 'L outil "outil_inexistant" n existe pas.',
+  });
 });

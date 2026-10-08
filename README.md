@@ -198,6 +198,32 @@ Les fichiers générés dans `dist/` ainsi que les dépendances installées dans
 
 Les dépendances Python restent gérées dans `requirements.txt`, tandis que les dépendances Node.js/TypeScript sont gérées dans `package.json` et `package-lock.json`.
 
+### Préparation de l'exécution des outils
+
+Une première couche d'exécution TypeScript a été ajoutée afin de préparer l'intégration progressive de l'exécution des outils.
+
+Le modèle produit un `ToolExecution` contenant le nom de l'outil et ses arguments.
+
+TypeScript recherche ensuite l'outil correspondant dans le catalogue et prépare son exécution :
+
+```text
+Modèle
+   │
+   ▼
+ToolExecution
+   │
+   ▼
+Exécuteur TypeScript
+   │
+   ▼
+Python
+   │
+   ▼
+ToolResult
+   │
+   ▼
+Modèle
+
 ## 🔒 Sécurité
 
 LabPilot est conçu dès le départ avec l'objectif de pouvoir devenir un projet public sur GitHub.
