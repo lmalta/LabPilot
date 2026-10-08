@@ -9,7 +9,8 @@
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
     "build": "tsc",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "test:ts": "npm run build && node --test dist/tests-ts/outils.test.js"
   },
   "repository": {
     "type": "git",
