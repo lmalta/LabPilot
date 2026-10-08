@@ -53,3 +53,17 @@ export interface ToolDefinition {
     };
   };
 }
+
+export interface ToolExecution {
+  name: string;
+  arguments: Record<string, unknown>;
+}
+
+export interface ToolResult {
+  success: boolean;
+  result?: unknown;
+  error?: {
+    type: string;
+    message: string;
+  };
+}
