@@ -118,41 +118,60 @@ test("un résultat d'outil peut représenter une erreur", () => {
   });
 });
 
-test("un outil connu peut être préparé pour exécution", () => {
-  const resultat = executerOutil({
-    name: "heure_actuelle",
-    arguments: {},
-  });
+test("un outil connu peut être exécuté par Python", async () => {
+  const pont = new PontPython();
 
-  assert.equal(resultat.success, true);
-  assert.deepEqual(resultat.result, {
-    outil: "heure_actuelle",
-    arguments: {},
-  });
+  pont.démarrer();
+
+  try {
+    const resultat = await executerOutil(
+      pont,
+      {
+        name: "heure_actuelle",
+        arguments: {},
+      },
+    );
+
+    assert.equal(resultat.success, true);
+    assert.equal(typeof resultat.result, "string");
+  } finally {
+    pont.arrêter();
+  }
 });
 
-test("un outil connu conserve ses arguments", () => {
-  const resultat = executerOutil({
-    name: "heure_dans",
-    arguments: {
-      minutes: 30,
-    },
-  });
+test("un outil Python peut recevoir des arguments depuis TypeScript", async () => {
+  const pont = new PontPython();
 
-  assert.equal(resultat.success, true);
-  assert.deepEqual(resultat.result, {
-    outil: "heure_dans",
-    arguments: {
-      minutes: 30,
-    },
-  });
+  pont.démarrer();
+
+  try {
+    const resultat = await executerOutil(
+      pont,
+      {
+        name: "heure_dans",
+        arguments: {
+          minutes: 30,
+        },
+      },
+    );
+
+    assert.equal(resultat.success, true);
+    assert.equal(typeof resultat.result, "string");
+  } finally {
+    pont.arrêter();
+  }
 });
 
-test("un outil inconnu retourne une erreur", () => {
-  const resultat = executerOutil({
-    name: "outil_inexistant",
-    arguments: {},
-  });
+test("un outil inconnu retourne une erreur", async () => {
+  const pont = new PontPython();
+
+  const resultat = await executerOutil(
+    pont,
+    {
+      name: "outil_inexistant",
+      arguments: {},
+    },
+  );
 
   assert.equal(resultat.success, false);
   assert.deepEqual(resultat.error, {
