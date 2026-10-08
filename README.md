@@ -267,6 +267,92 @@ Le pont gère également les erreurs de communication et l'arrêt du processus P
 
 Cette architecture permet à TypeScript de devenir progressivement l'orchestrateur principal de LabPilot tout en conservant Python pour l'exécution des outils et les futurs services liés à l'IA, au traitement documentaire et au calcul.
 
+### Orchestration TypeScript
+
+L'orchestration de l'agent est maintenant prise en charge par TypeScript.
+
+Le rôle de TypeScript est de coordonner les échanges entre l'utilisateur, le modèle Ollama et les outils exécutés par Python.
+
+Le cycle d'orchestration est le suivant :
+
+```text
+Utilisateur
+    │
+    ▼
+Orchestrateur TypeScript
+    │
+    ▼
+Ollama
+    │
+    ├── réponse finale ───────────────► Utilisateur
+    │
+    └── demande d'outil
+            │
+            ▼
+       executerOutil()
+            │
+            ▼
+        PontPython
+            │
+            ▼
+        outil Python
+            │
+            ▼
+        ToolResult
+            │
+            ▼
+     message d'outil
+            │
+            ▼
+        historique
+            │
+            ▼
+          Ollama
+            │
+            └── ...
+```
+
+`OllamaClient` est responsable de la communication avec l'API Ollama. Il transmet au modèle l'historique des messages ainsi que le catalogue des outils disponibles.
+
+`Orchestrateur` est responsable de la boucle d'exécution. Il analyse la réponse du modèle pour déterminer si celui-ci demande l'utilisation d'un outil ou s'il fournit directement une réponse finale.
+
+Lorsqu'un outil est demandé, TypeScript :
+
+1. convertit l'appel du modèle en `ToolExecution` ;
+2. transmet l'exécution à `executerOutil()` ;
+3. récupère le `ToolResult` fourni par Python ;
+4. transforme le résultat en message d'outil ;
+5. ajoute la réponse du modèle et le résultat à l'historique ;
+6. renvoie l'historique mis à jour à Ollama.
+
+Cette boucle permet au modèle de demander plusieurs outils successivement avant de produire sa réponse finale.
+
+Une limite de **10 itérations d'orchestration** est appliquée. Si le modèle continue à demander des outils après cette limite, l'orchestrateur arrête l'exécution et retourne une erreur contrôlée.
+
+Cette limite constitue une protection contre les boucles d'appels d'outils incontrôlées.
+
+La responsabilité des composants est ainsi séparée :
+
+```text
+TypeScript
+├── orchestration de l'agent
+├── communication avec Ollama
+├── historique des messages
+├── détection des appels d'outils
+├── contrôle de la boucle
+└── limite d'itérations
+
+Python
+├── exécution des outils
+├── PyTorch / CUDA
+├── traitement documentaire
+└── futurs services IA et calcul
+```
+
+TypeScript ne dépend pas de l'implémentation interne des outils Python. Il manipule uniquement les structures `ToolExecution` et `ToolResult` ainsi que le catalogue des outils.
+
+Cette séparation permet de faire évoluer progressivement LabPilot vers une architecture dans laquelle TypeScript constitue l'orchestrateur principal, tandis que Python reste spécialisé dans l'exécution des outils et les traitements nécessitant son écosystème.
+
 ## 🔒 Sécurité
 
 LabPilot est conçu dès le départ avec l'objectif de pouvoir devenir un projet public sur GitHub.

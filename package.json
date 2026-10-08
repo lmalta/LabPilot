@@ -23,5 +23,8 @@
     "@types/node": "^26.6.4",
     "typescript": "^7.0.2"
   },
-  "type": "module"
+  "type": "module",
+  "dependencies": {
+    "dotenv": "^18.0.6"
+  }
 }
