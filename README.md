@@ -198,31 +198,47 @@ Les fichiers générés dans `dist/` ainsi que les dépendances installées dans
 
 Les dépendances Python restent gérées dans `requirements.txt`, tandis que les dépendances Node.js/TypeScript sont gérées dans `package.json` et `package-lock.json`.
 
-### Préparation de l'exécution des outils
+### Pont TypeScript → Python persistant
 
-Une première couche d'exécution TypeScript a été ajoutée afin de préparer l'intégration progressive de l'exécution des outils.
+Le pont entre TypeScript et Python repose maintenant sur un processus Python persistant.
 
-Le modèle produit un `ToolExecution` contenant le nom de l'outil et ses arguments.
-
-TypeScript recherche ensuite l'outil correspondant dans le catalogue et prépare son exécution :
+TypeScript démarre le processus Python une seule fois, puis peut lui transmettre plusieurs demandes d'exécution successives sans recréer le processus à chaque appel.
 
 ```text
-Modèle
-   │
-   ▼
-ToolExecution
-   │
-   ▼
-Exécuteur TypeScript
-   │
-   ▼
-Python
-   │
-   ▼
-ToolResult
-   │
-   ▼
-Modèle
+TypeScript
+    │
+    ▼
+PontPython
+    │
+    ├── démarrer()
+    │
+    ├── executer(outil 1) ──┐
+    ├── executer(outil 2) ──┤
+    ├── executer(outil 3) ──┤
+    │                        │
+    │                   processus Python
+    │                        │
+    └── arrêter() ───────────┘
+```
+
+La communication utilise un protocole simple basé sur JSON :
+
+- une requête JSON par ligne ;
+- une réponse JSON par ligne ;
+- les arguments de l'outil sont transmis dans la requête ;
+- le résultat ou l'erreur est retourné dans la réponse.
+
+Le cycle de vie du pont est contrôlé par trois opérations :
+
+- `démarrer()` démarre le processus Python ;
+- `executer()` transmet une exécution d'outil et attend sa réponse ;
+- `arrêter()` termine le processus Python.
+
+Les exécutions sont actuellement **séquentielles** : une seule demande peut être en attente à la fois. Une deuxième exécution lancée avant la réception de la première réponse est refusée explicitement.
+
+Le pont gère également les erreurs de communication et l'arrêt du processus Python. Après un arrêt, le pont peut être démarré à nouveau et utilisé pour de nouvelles exécutions.
+
+Cette architecture permet à TypeScript de devenir progressivement l'orchestrateur principal de LabPilot tout en conservant Python pour l'exécution des outils et les futurs services liés à l'IA, au traitement documentaire et au calcul.
 
 ## 🔒 Sécurité
 
