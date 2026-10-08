@@ -140,7 +140,63 @@ src/
         │
         ▼
       dist/
+```
 
+Le premier composant introduit définit les types utilisés pour représenter les messages échangés par l'agent :
+
+- messages système ;
+- messages utilisateur ;
+- réponses de l'assistant ;
+- messages provenant des outils ;
+- appels d'outils.
+
+Ces types constituent un premier contrat commun pour les futurs composants TypeScript de LabPilot.
+
+### Catalogue TypeScript des outils
+
+Le projet dispose également d'un catalogue TypeScript décrivant les outils disponibles pour l'agent.
+
+Les définitions actuelles correspondent aux cinq outils existants côté Python :
+
+- `heure_actuelle` ;
+- `heure_dans` ;
+- `etat_systeme` ;
+- `etat_gpu` ;
+- `etat_ollama`.
+
+TypeScript décrit ainsi le contrat des outils sans remplacer leur implémentation Python.
+
+Cette séparation permet d'introduire progressivement TypeScript dans l'orchestration de LabPilot tout en conservant Python pour l'exécution des composants déjà existants.
+
+### Tests TypeScript
+
+Les tests TypeScript utilisent le module de test natif de Node.js.
+
+Le catalogue des outils est notamment vérifié afin de s'assurer que les cinq outils attendus sont bien présents.
+
+Les vérifications TypeScript peuvent être effectuées avec :
+
+```bash
+npm run typecheck
+```
+
+La compilation du projet est effectuée avec :
+
+```bash
+npm run build
+```
+
+Les tests TypeScript sont exécutés avec :
+
+```bash
+npm run test:ts
+```
+
+Cette commande compile d'abord le projet puis exécute les tests TypeScript compilés.
+
+Les fichiers générés dans `dist/` ainsi que les dépendances installées dans `node_modules/` ne sont pas versionnés.
+
+Les dépendances Python restent gérées dans `requirements.txt`, tandis que les dépendances Node.js/TypeScript sont gérées dans `package.json` et `package-lock.json`.
 
 ## 🔒 Sécurité
 
