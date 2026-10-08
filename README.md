@@ -95,6 +95,70 @@ De nouvelles intégrations seront ajoutées progressivement.
 
 ---
 
+## 🧩 Architecture logicielle
+
+LabPilot adopte progressivement une architecture mixte **TypeScript / Python**.
+
+TypeScript et Node.js seront progressivement utilisés pour les composants liés à :
+
+- l'orchestration de l'agent ;
+- les API ;
+- les outils ;
+- les communications WebSocket ;
+- la future interface web ;
+- les composants nécessitant une forte intégration avec l'écosystème JavaScript/TypeScript.
+
+Python reste privilégié pour les composants liés à :
+
+- l'IA et aux services de modèles ;
+- PyTorch et CUDA ;
+- le traitement documentaire ;
+- les calculs et traitements scientifiques ;
+- les composants exploitant directement l'écosystème Python.
+
+Cette évolution se fera progressivement, par fonctionnalités indépendantes et validées.
+
+LabPilot ne sera donc pas réécrit brutalement dans un autre langage. L'objectif est d'introduire TypeScript là où il apporte une réelle valeur, tout en conservant Python pour les domaines où son écosystème est particulièrement adapté.
+
+### Premier socle TypeScript
+
+Le projet dispose désormais d'un premier socle TypeScript :
+
+```text
+src/
+├── index.ts
+└── labpilot.ts
+
+        │
+        ▼
+
+     TypeScript
+        │
+        ▼
+       tsc
+        │
+        ▼
+      dist/
+```
+
+Le code TypeScript est vérifié avec :
+
+```bash
+npm run typecheck
+```
+
+et compilé avec :
+
+```bash
+npm run build
+```
+
+Les fichiers générés dans `dist/` ainsi que les dépendances installées dans `node_modules/` ne sont pas versionnés.
+
+Les dépendances Python restent gérées dans `requirements.txt`, tandis que les dépendances Node.js/TypeScript sont gérées dans `package.json` et `package-lock.json`.
+
+---
+
 ## 🔒 Sécurité
 
 LabPilot est conçu dès le départ avec l'objectif de pouvoir devenir un projet public sur GitHub.

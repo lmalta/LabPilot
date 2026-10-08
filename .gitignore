@@ -41,3 +41,7 @@ temp/
 *.crt
 secrets/
 credentials/
+
+# Node / TypeScript
+node_modules/
+dist/
