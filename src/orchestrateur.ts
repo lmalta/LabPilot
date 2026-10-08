@@ -43,9 +43,12 @@ export class Orchestrateur {
   }
 
   public async traiter(
-  messages: Message[],
-): Promise<MessageAssistant> {
-  const historique = new HistoriqueMessages(messages);
+    messages: Message[],
+    historiqueExistant?: HistoriqueMessages,
+  ): Promise<MessageAssistant> {
+    const historique =
+      historiqueExistant ??
+      new HistoriqueMessages(messages);
 
   for (
     let iteration = 0;
