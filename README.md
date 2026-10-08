@@ -353,6 +353,38 @@ TypeScript ne dépend pas de l'implémentation interne des outils Python. Il man
 
 Cette séparation permet de faire évoluer progressivement LabPilot vers une architecture dans laquelle TypeScript constitue l'orchestrateur principal, tandis que Python reste spécialisé dans l'exécution des outils et les traitements nécessitant son écosystème.
 
+### Historique des messages TypeScript
+
+La gestion de l'historique des messages est centralisée dans le composant `HistoriqueMessages`.
+
+Pour le moment, l'historique est conservé uniquement en mémoire. Il n'est donc pas encore persisté sur disque ou dans une base de données.
+
+`HistoriqueMessages` permet :
+
+- d'initialiser un historique avec des messages existants ;
+- d'ajouter de nouveaux messages ;
+- de récupérer une copie de l'historique sans exposer directement son état interne.
+
+L'orchestrateur utilise ce composant pour conserver les échanges successifs avec Ollama pendant une exécution.
+
+Lorsqu'un outil est utilisé, l'historique conserve notamment :
+
+```text
+message utilisateur
+        │
+        ▼
+réponse Ollama avec appel d'outil
+        │
+        ▼
+résultat de l'outil
+        │
+        ▼
+nouvel appel Ollama
+        │
+        ▼
+réponse finale
+```
+
 ## 🔒 Sécurité
 
 LabPilot est conçu dès le départ avec l'objectif de pouvoir devenir un projet public sur GitHub.

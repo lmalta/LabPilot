@@ -4,6 +4,7 @@ import { PontPython } from "../src/pont-python.js";
 import { executerOutil } from "../src/outils.js";
 import { convertirResultatEnMessageOutil, convertirToolCallEnExecution, OllamaClient } from "../src/ollama.js";
 import { Orchestrateur } from "../src/orchestrateur.js";
+import type { Message } from "../src/types.js";
 
 test("Ollama demande l utilisation d un outil", async () => {
   const ollama = new OllamaClient();
@@ -200,7 +201,22 @@ test("L orchestrateur obtient une réponse finale après un outil", async () => 
 
 test("L orchestrateur limite le nombre d itérations", async () => {
   const pont = new PontPython();
-  const ollama = new OllamaClient();
+
+  const ollama = {
+    chat: async (_messages: Message[]) => ({
+      role: "assistant" as const,
+      content: "",
+      tool_calls: [
+        {
+          function: {
+            name: "heure_actuelle",
+            arguments: {},
+          },
+        },
+      ],
+    }),
+  } as OllamaClient;
+
   const orchestrateur = new Orchestrateur(
     pont,
     ollama,
@@ -222,4 +238,75 @@ test("L orchestrateur limite le nombre d itérations", async () => {
   } finally {
     pont.arrêter();
   }
+});
+
+test("l orchestrateur conserve l historique entre plusieurs appels Ollama", async () => {
+  const messagesRecus: Message[][] = [];
+
+  const ollama = {
+    chat: async (messages: Message[]) => {
+      messagesRecus.push(messages);
+
+      if (messagesRecus.length === 1) {
+        return {
+          role: "assistant" as const,
+          content: "",
+          tool_calls: [
+            {
+              function: {
+                name: "heure_actuelle",
+                arguments: {},
+              },
+            },
+          ],
+        };
+      }
+
+      return {
+        role: "assistant" as const,
+        content: "Il est actuellement 12h00.",
+      };
+    },
+  } as OllamaClient;
+
+  const pont = new PontPython();
+  pont.démarrer();
+
+  const orchestrateur = new Orchestrateur(
+    pont,
+    ollama,
+  );
+
+  const resultat = await orchestrateur.traiter([
+    {
+      role: "user",
+      content: "Quelle heure est-il ?",
+    },
+  ]);
+
+  pont.arrêter();
+
+  assert.equal(
+    resultat.content,
+    "Il est actuellement 12h00.",
+  );
+
+  assert.equal(messagesRecus.length, 2);
+
+  assert.deepEqual(messagesRecus[0], [
+    {
+      role: "user",
+      content: "Quelle heure est-il ?",
+    },
+  ]);
+
+  assert.equal(messagesRecus[1]?.length, 3);
+
+  assert.deepEqual(messagesRecus[1]?.[0], {
+    role: "user",
+    content: "Quelle heure est-il ?",
+  });
+
+  assert.equal(messagesRecus[1]?.[1]?.role, "assistant");
+  assert.equal(messagesRecus[1]?.[2]?.role, "tool");
 });
