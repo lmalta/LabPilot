@@ -234,6 +234,33 @@ Le cycle de vie du pont est contrôlé par trois opérations :
 - `executer()` transmet une exécution d'outil et attend sa réponse ;
 - `arrêter()` termine le processus Python.
 
+L'exécution des outils depuis TypeScript utilise directement ce pont persistant.
+
+La fonction `executerOutil()` reçoit une instance de `PontPython` et lui transmet la demande d'exécution. Elle vérifie d'abord que l'outil demandé existe dans le catalogue TypeScript, puis délègue son exécution au processus Python.
+
+Le cycle d'exécution est donc le suivant :
+
+```text
+TypeScript
+    │
+    ▼
+executerOutil()
+    │
+    ├── vérification de l'outil
+    │
+    ▼
+PontPython.executer()
+    │
+    ▼
+processus Python persistant
+    │
+    ▼
+outil Python réel
+    │
+    ▼
+ToolResult
+```
+
 Les exécutions sont actuellement **séquentielles** : une seule demande peut être en attente à la fois. Une deuxième exécution lancée avant la réception de la première réponse est refusée explicitement.
 
 Le pont gère également les erreurs de communication et l'arrêt du processus Python. Après un arrêt, le pont peut être démarré à nouveau et utilisé pour de nouvelles exécutions.

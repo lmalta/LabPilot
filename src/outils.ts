@@ -1,9 +1,12 @@
+
 import { definitionsOutils } from "./labpilot.js";
+import { PontPython } from "./pont-python.js";
 import type { ToolExecution, ToolResult } from "./types.js";
 
-export function executerOutil(
+export async function executerOutil(
+  pont: PontPython,
   execution: ToolExecution,
-): ToolResult {
+): Promise<ToolResult> {
   const outil = definitionsOutils.find(
     (definition) => definition.function.name === execution.name,
   );
@@ -18,11 +21,5 @@ export function executerOutil(
     };
   }
 
-  return {
-    success: true,
-    result: {
-      outil: outil.function.name,
-      arguments: execution.arguments,
-    },
-  };
+  return pont.executer(execution);
 }
