@@ -35,25 +35,25 @@ Le fonctionnement général est le suivant :
 
 ```text
 Question de l'utilisateur
-          │
-          ▼
-     Modèle IA local
-          │
-          ▼
-        Agent
-          │
-          ├──────► Outil
-          │          │
-          │          ▼
-          │       Résultat
-          │          │
-          └──────────┘
-          │
-          ▼
-       Analyse
-          │
-          ▼
-    Réponse utilisateur
+         │
+         ▼
+    Modèle IA local
+         │
+         ▼
+       Agent
+         │
+         ├──────► Outil
+         │          │
+         │          ▼
+         │       Résultat
+         │          │
+         └──────────┘
+         │
+         ▼
+      Analyse
+         │
+         ▼
+   Réponse utilisateur
 ```
 
 L'agent doit être capable de déterminer lorsqu'un outil est nécessaire, de l'utiliser, d'interpréter son résultat et de poursuivre son raisonnement si nécessaire.
@@ -65,16 +65,16 @@ L'agent doit être capable de déterminer lorsqu'un outil est nécessaire, de l'
 La première version de LabPilot sera volontairement simple.
 
 ```text
-                         LabPilot
-                            │
-                     ┌──────┴──────┐
-                     │    Agent    │
-                     └──────┬──────┘
-                            │
-              ┌─────────────┼─────────────┐
-              ▼             ▼             ▼
-           Système         GPU          Ollama
-            outils        outils          API
+                        LabPilot
+                           │
+                    ┌──────┴──────┐
+                    │    Agent    │
+                    └──────┬──────┘
+                           │
+             ┌─────────────┼─────────────┐
+             ▼             ▼             ▼
+          Système         GPU          Ollama
+           outils        outils          API
 ```
 
 Les premiers outils seront exclusivement destinés à la **lecture et à l'observation**.
@@ -85,11 +85,11 @@ Les premières capacités prévues sont :
 - état du GPU ;
 - état d'Ollama ;
 - modèles disponibles ;
-- informations générales sur l'environnement.
+- informations générales sur l'environnement ;
 - limiter le nombre de cycles successifs d'appels d'outils pour empêcher les boucles incontrôlées ;
 - consulter l'état des GPU NVIDIA visibles par le système ;
 - consulter l'état du serveur Ollama, sa version, les modèles disponibles et les modèles actuellement actifs ;
-- interpréter les résultats des outils et les utiliser pour formuler une réponse ;
+- interpréter les résultats des outils et les utiliser pour formuler une réponse.
 
 De nouvelles intégrations seront ajoutées progressivement.
 
@@ -130,16 +130,16 @@ src/
 ├── labpilot.ts
 └── types.ts
 
-        │
-        ▼
+       │
+       ▼
 
-     TypeScript
-        │
-        ▼
-       tsc
-        │
-        ▼
-      dist/
+    TypeScript
+       │
+       ▼
+      tsc
+       │
+       ▼
+     dist/
 ```
 
 Le premier composant introduit définit les types utilisés pour représenter les messages échangés par l'agent :
@@ -196,6 +196,8 @@ Cette commande compile d'abord le projet puis exécute les tests TypeScript comp
 
 Les fichiers générés dans `dist/` ainsi que les dépendances installées dans `node_modules/` ne sont pas versionnés.
 
+Les données locales de LabPilot sont également exclues du dépôt Git.
+
 Les dépendances Python restent gérées dans `requirements.txt`, tandis que les dépendances Node.js/TypeScript sont gérées dans `package.json` et `package-lock.json`.
 
 ### Pont TypeScript → Python persistant
@@ -206,19 +208,19 @@ TypeScript démarre le processus Python une seule fois, puis peut lui transmettr
 
 ```text
 TypeScript
-    │
-    ▼
+   │
+   ▼
 PontPython
-    │
-    ├── démarrer()
-    │
-    ├── executer(outil 1) ──┐
-    ├── executer(outil 2) ──┤
-    ├── executer(outil 3) ──┤
-    │                        │
-    │                   processus Python
-    │                        │
-    └── arrêter() ───────────┘
+   │
+   ├── démarrer()
+   │
+   ├── executer(outil 1) ──┐
+   ├── executer(outil 2) ──┤
+   ├── executer(outil 3) ──┤
+   │                        │
+   │                   processus Python
+   │                        │
+   └── arrêter() ───────────┘
 ```
 
 La communication utilise un protocole simple basé sur JSON :
@@ -242,22 +244,22 @@ Le cycle d'exécution est donc le suivant :
 
 ```text
 TypeScript
-    │
-    ▼
+   │
+   ▼
 executerOutil()
-    │
-    ├── vérification de l'outil
-    │
-    ▼
+   │
+   ├── vérification de l'outil
+   │
+   ▼
 PontPython.executer()
-    │
-    ▼
+   │
+   ▼
 processus Python persistant
-    │
-    ▼
+   │
+   ▼
 outil Python réel
-    │
-    ▼
+   │
+   ▼
 ToolResult
 ```
 
@@ -277,39 +279,39 @@ Le cycle d'orchestration est le suivant :
 
 ```text
 Utilisateur
-    │
-    ▼
+   │
+   ▼
 Orchestrateur TypeScript
-    │
-    ▼
+   │
+   ▼
 Ollama
-    │
-    ├── réponse finale ───────────────► Utilisateur
-    │
-    └── demande d'outil
-            │
-            ▼
-       executerOutil()
-            │
-            ▼
-        PontPython
-            │
-            ▼
-        outil Python
-            │
-            ▼
-        ToolResult
-            │
-            ▼
-     message d'outil
-            │
-            ▼
-        historique
-            │
-            ▼
-          Ollama
-            │
-            └── ...
+   │
+   ├── réponse finale ───────────────► Utilisateur
+   │
+   └── demande d'outil
+           │
+           ▼
+      executerOutil()
+           │
+           ▼
+       PontPython
+           │
+           ▼
+       outil Python
+           │
+           ▼
+       ToolResult
+           │
+           ▼
+    message d'outil
+           │
+           ▼
+       historique
+           │
+           ▼
+         Ollama
+           │
+           └── ...
 ```
 
 `OllamaClient` est responsable de la communication avec l'API Ollama. Il transmet au modèle l'historique des messages ainsi que le catalogue des outils disponibles.
@@ -357,15 +359,43 @@ Cette séparation permet de faire évoluer progressivement LabPilot vers une arc
 
 La gestion de l'historique des messages est centralisée dans le composant `HistoriqueMessages`.
 
-Pour le moment, l'historique est conservé uniquement en mémoire. Il n'est donc pas encore persisté sur disque ou dans une base de données.
+L'historique peut être conservé en mémoire et persisté dans un dépôt de conversations. Cette séparation permet à l'orchestrateur de manipuler l'historique sans dépendre directement de SQLite.
+
+L'architecture de persistance est organisée ainsi :
+
+```text
+HistoriqueMessages
+        │
+        ▼
+DepotConversations
+        │
+        ▼
+DepotConversationsSQLite
+        │
+        ▼
+     SQLite
+```
+
+`DepotConversations` définit l'interface du dépôt. `DepotConversationsSQLite` en fournit actuellement l'implémentation avec une base SQLite locale.
 
 `HistoriqueMessages` permet :
 
 - d'initialiser un historique avec des messages existants ;
 - d'ajouter de nouveaux messages ;
-- de récupérer une copie de l'historique sans exposer directement son état interne.
+- de récupérer une copie de l'historique sans exposer directement son état interne ;
+- de sauvegarder les nouveaux messages dans un dépôt ;
+- de recharger un historique existant depuis un dépôt ;
+- d'éviter de sauvegarder plusieurs fois les mêmes messages lors de sauvegardes successives.
 
-L'orchestrateur utilise ce composant pour conserver les échanges successifs avec Ollama pendant une exécution.
+La base SQLite utilisée par défaut est stockée dans :
+
+```text
+data/labpilot.db
+```
+
+Le répertoire `data/` est exclu du dépôt Git afin que les données locales des conversations ne soient jamais versionnées.
+
+L'orchestrateur peut également utiliser un `HistoriqueMessages` déjà existant. Cela permet de recharger une conversation persistée avant de poursuivre son traitement.
 
 Lorsqu'un outil est utilisé, l'historique conserve notamment :
 
@@ -384,6 +414,8 @@ nouvel appel Ollama
         ▼
 réponse finale
 ```
+
+---
 
 ## 🔒 Sécurité
 
@@ -431,15 +463,15 @@ Chaque fonctionnalité suivra autant que possible le cycle :
 
 ```text
 Conception
-    ↓
+   ↓
 Développement
-    ↓
+   ↓
 Test
-    ↓
+   ↓
 Validation
-    ↓
+   ↓
 Documentation
-    ↓
+   ↓
 Commit Git
 ```
 
@@ -520,28 +552,38 @@ L'objectif est de conserver un projet :
 
 ## 📁 Structure du projet
 
-La structure actuelle du projet est volontairement réduite.
-
-Elle évoluera progressivement avec les fonctionnalités de LabPilot.
+La structure actuelle du projet évolue progressivement avec l'intégration de TypeScript.
 
 ```text
 LabPilot/
-├── labpilot.py
-├── README.md
+├── src/
+│   ├── index.ts
+│   ├── labpilot.ts
+│   ├── types.ts
+│   ├── historique.ts
+│   ├── orchestrateur.ts
+│   ├── ollama-client.ts
+│   ├── pont-python.ts
+│   ├── depot-conversations.ts
+│   ├── depot-conversations-sqlite.ts
+│   └── ...
+├── tests-ts/
+│   └── ...
+├── data/
+│   └── labpilot.db
+├── package.json
+├── package-lock.json
 ├── requirements.txt
-└── labpilot/
-    ├── __init__.py
-    ├── configuration.py
-    ├── ollama.py
-    ├── agent.py
-    └── tools.py
+└── README.md
 ```
 
-- labpilot.py : point d'entrée de l'application ;
-- configuration.py : chargement de la configuration ;
-- ollama.py : communication avec l'API Ollama ;
-- agent.py : logique principale de l'agent ;
-- tools.py : déclaration et exécution des outils disponibles.
+Le répertoire `data/` contient les données locales de LabPilot et n'est pas versionné.
+
+Les fichiers TypeScript de `src/` contiennent progressivement les composants d'orchestration et les contrats utilisés par l'agent.
+
+Les fichiers de `tests-ts/` contiennent les tests des composants TypeScript.
+
+Les composants Python restent utilisés pour l'exécution des outils et les traitements spécialisés.
 
 ---
 
@@ -587,19 +629,19 @@ L'évolution recherchée est progressivement :
 
 ```text
 Observer
-   ↓
+  ↓
 Comprendre
-   ↓
+  ↓
 Raisonner
-   ↓
+  ↓
 Proposer
-   ↓
+  ↓
 Demander confirmation
-   ↓
+  ↓
 Agir
-   ↓
+  ↓
 Vérifier
-   ↓
+  ↓
 Rendre compte
 ```
 
@@ -617,7 +659,7 @@ Le projet sait actuellement :
 - définir l'URL et le modèle Ollama utilisés ;
 - communiquer avec l'API `/api/chat` d'Ollama ;
 - encapsuler la communication avec le LLM dans un module dédié ;
-- maintenir un historique de conversation dans un objet `Agent` ;
+- maintenir un historique de conversation dans un objet `HistoriqueMessages` ;
 - transmettre cet historique au LLM à chaque nouvelle requête ;
 - conserver les réponses du LLM dans l'historique ;
 - déclarer des outils utilisables par le modèle ;
@@ -629,7 +671,10 @@ Le projet sait actuellement :
 - gérer plusieurs appels d'outils dans une même réponse du modèle ;
 - enchaîner plusieurs séries d'appels d'outils jusqu'à obtenir une réponse finale ;
 - capturer les erreurs d'exécution des outils et les transmettre au modèle ;
-- conserver les appels d'outils et leurs résultats dans l'historique ;
+- conserver les appels d'outils et leurs résultats dans l'historique en mémoire ;
+- persister l'historique des conversations dans une base SQLite locale ;
+- recharger une conversation persistée depuis SQLite ;
+- éviter la duplication des messages lors de sauvegardes successives ;
 - présenter les résultats techniques de manière naturelle à l'utilisateur.
 
 Un premier ensemble d'outils permet actuellement de travailler avec l'heure courante, de calculer une heure future et d'obtenir l'état général du système.
@@ -649,48 +694,75 @@ Les charges moyennes correspondent au **load average Linux** et ne sont pas expr
 L'architecture actuelle est organisée autour de plusieurs responsabilités :
 
 ```text
-labpilot.py
-    ↓
-Agent
-    ├── Historique
-    ├── Décision d'utilisation d'un outil
-    └── Exécution des outils
-            ↓
-        tools.py
-            ├── heure_actuelle
-            ├── heure_dans
-            └── etat_systeme
-                    ↓
-                 Résultat
-                    ↓
-                  Ollama
-                    ↓
-              Réponse finale
+TypeScript
+   │
+   ├── Orchestrateur
+   │       │
+   │       ├── HistoriqueMessages
+   │       │       │
+   │       │       └── DepotConversations
+   │       │               │
+   │       │               └── DepotConversationsSQLite
+   │       │
+   │       ├── OllamaClient
+   │       │
+   │       └── PontPython
+   │               │
+   │               ▼
+   │          processus Python
+   │               │
+   │               ▼
+   │          outils Python
+   │
+   ▼
+Ollama
 ```
+
+La persistance des conversations est désormais organisée autour d'une interface de dépôt afin que l'orchestrateur ne dépende pas directement de SQLite.
+
+Cette séparation permettra notamment de faire évoluer ultérieurement le mécanisme de stockage sans modifier la logique de l'orchestrateur.
 
 La communication avec le modèle reste séparée de la logique de l'agent :
 
 ```text
-Agent
-    ↓
-ollama.py
-    ↓
+Orchestrateur
+   ↓
+OllamaClient
+   ↓
 API Ollama
-    ↓
+   ↓
 LLM local
 ```
 
-et la configuration reste indépendante :
+La communication avec les outils reste également séparée :
 
 ```text
-.env
-    ↓
-configuration.py
-    ↓
-Agent / Ollama
+Orchestrateur
+   ↓
+executerOutil()
+   ↓
+PontPython
+   ↓
+outil Python
+   ↓
+ToolResult
 ```
 
-Cette étape valide le principe fondamental de LabPilot : le modèle peut décider d'utiliser un outil, l'agent peut l'exécuter et le résultat peut être réinjecté dans le raisonnement du modèle.
+et la persistance des conversations :
+
+```text
+HistoriqueMessages
+   ↓
+DepotConversations
+   ↓
+DepotConversationsSQLite
+   ↓
+SQLite
+```
+
+Cette organisation permet à chaque composant d'avoir une responsabilité clairement définie.
+
+Cette étape valide le principe fondamental de LabPilot : le modèle peut décider d'utiliser un outil, l'agent peut l'exécuter, le résultat peut être réinjecté dans le raisonnement du modèle et l'historique de la conversation peut être conservé de manière persistante.
 
 Les tests montrent également que le modèle peut interpréter les résultats des outils et formuler une réponse contextualisée. Cette interprétation reste toutefois dépendante du raisonnement du modèle et peut être imparfaite.
 
@@ -698,10 +770,11 @@ Les tests montrent également que le modèle peut interpréter les résultats de
 
 Le mécanisme d'outils gère désormais les appels successifs, les erreurs d'exécution, la protection contre les boucles incontrôlées et l'interprétation des résultats.
 
-La prochaine évolution consiste à intégrer progressivement de véritables outils de supervision du homelab.
+L'historique des conversations peut désormais être persisté localement avec SQLite.
+
+La prochaine évolution consiste à poursuivre la consolidation de l'architecture TypeScript puis à intégrer progressivement de véritables outils de supervision du Homelab.
 
 ---
-
 
 ## 📄 Licence
 

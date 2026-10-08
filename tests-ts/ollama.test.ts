@@ -5,6 +5,9 @@ import { executerOutil } from "../src/outils.js";
 import { convertirResultatEnMessageOutil, convertirToolCallEnExecution, OllamaClient } from "../src/ollama.js";
 import { Orchestrateur } from "../src/orchestrateur.js";
 import type { Message } from "../src/types.js";
+import {
+  HistoriqueMessages,
+} from "../src/historique.js";
 
 test("Ollama demande l utilisation d un outil", async () => {
   const ollama = new OllamaClient();
@@ -309,4 +312,60 @@ test("l orchestrateur conserve l historique entre plusieurs appels Ollama", asyn
 
   assert.equal(messagesRecus[1]?.[1]?.role, "assistant");
   assert.equal(messagesRecus[1]?.[2]?.role, "tool");
+});
+
+test("l orchestrateur peut utiliser un historique existant", async () => {
+  const pont = new PontPython();
+
+  pont.démarrer();
+
+  let messagesRecus: Message[] = [];
+
+  const ollama = {
+    chat: async (messages: Message[]) => {
+      messagesRecus = messages;
+
+      return {
+        role: "assistant" as const,
+        content: "Réponse depuis l historique.",
+      };
+    },
+  } as OllamaClient;
+
+  const historique =
+    new HistoriqueMessages();
+
+  historique.ajouter({
+    role: "user",
+    content: "Message déjà présent.",
+  });
+
+  const orchestrateur =
+    new Orchestrateur(
+      pont,
+      ollama,
+    );
+
+  const reponse =
+    await orchestrateur.traiter(
+      [],
+      historique,
+    );
+
+  assert.equal(
+    reponse.content,
+    "Réponse depuis l historique.",
+  );
+
+  assert.deepEqual(
+    messagesRecus,
+    [
+      {
+        role: "user",
+        content: "Message déjà présent.",
+      },
+    ],
+  );
+
+  pont.arrêter();
 });
