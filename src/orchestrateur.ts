@@ -10,6 +10,7 @@ import type {
   MessageAssistant,
   ToolResult,
 } from "./types.js";
+import { HistoriqueMessages } from "./historique.js";
 
 export class Orchestrateur {
   public constructor(
@@ -44,14 +45,16 @@ export class Orchestrateur {
   public async traiter(
   messages: Message[],
 ): Promise<MessageAssistant> {
-  let historique = [...messages];
+  const historique = new HistoriqueMessages(messages);
 
   for (
     let iteration = 0;
     iteration < this.maxIterations;
     iteration += 1
   ) {
-    const reponse = await this.ollama.chat(historique);
+    const reponse = await this.ollama.chat(
+      historique.obtenir(),
+    );
 
     if (
       reponse.tool_calls === undefined ||
@@ -82,11 +85,8 @@ export class Orchestrateur {
         resultat,
       );
 
-    historique = [
-      ...historique,
-      reponse,
-      messageOutil,
-    ];
+    historique.ajouter(reponse);
+    historique.ajouter(messageOutil);
   }
 
   throw new Error(
