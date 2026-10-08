@@ -5,7 +5,7 @@ import test from "node:test";
 import { definitionsOutils } from "../src/labpilot.js";
 import type { ToolExecution, ToolResult } from "../src/types.js";
 import { executerOutil } from "../src/outils.js";
-import { executerAvecPython } from "../src/pont-python.js";
+import { PontPython } from "../src/pont-python.js";
 
 const outilsAttendus = [
   "heure_actuelle",
@@ -161,37 +161,124 @@ test("un outil inconnu retourne une erreur", () => {
   });
 });
 
-test("un outil peut être exécuté par Python depuis TypeScript", async () => {
-  const resultat = await executerAvecPython({
+test("un même pont Python peut exécuter plusieurs outils successivement", async () => {
+  const pont = new PontPython();
+
+  pont.démarrer();
+
+  try {
+    const premier = await pont.executer({
+      name: "heure_actuelle",
+      arguments: {},
+    });
+
+    const second = await pont.executer({
+      name: "heure_dans",
+      arguments: {
+        minutes: 30,
+      },
+    });
+
+    assert.equal(premier.success, true);
+    assert.equal(typeof premier.result, "string");
+
+    assert.equal(second.success, true);
+    assert.equal(typeof second.result, "string");
+  } finally {
+    pont.arrêter();
+  }
+});
+
+test("le pont Python refuse une exécution avant son démarrage", async () => {
+  const pont = new PontPython();
+
+  await assert.rejects(
+    pont.executer({
+      name: "heure_actuelle",
+      arguments: {},
+    }),
+    {
+      message: "Le pont Python n est pas démarré.",
+    },
+  );
+});
+
+test("le pont Python refuse une deuxième exécution pendant une exécution en attente", async () => {
+  const pont = new PontPython();
+
+  pont.démarrer();
+
+  try {
+    const premiere = pont.executer({
+      name: "heure_actuelle",
+      arguments: {},
+    });
+
+    await assert.rejects(
+      pont.executer({
+        name: "heure_dans",
+        arguments: {
+          minutes: 30,
+        },
+      }),
+      {
+        message: "Une exécution Python est déjà en attente.",
+      },
+    );
+
+    const resultat = await premiere;
+
+    assert.equal(resultat.success, true);
+  } finally {
+    pont.arrêter();
+  }
+});
+
+test("le pont Python peut être redémarré après un arrêt", async () => {
+  const pont = new PontPython();
+
+  pont.démarrer();
+
+  const premier = await pont.executer({
     name: "heure_actuelle",
     arguments: {},
   });
 
-  assert.equal(resultat.success, true);
-  assert.equal(typeof resultat.result, "string");
+  assert.equal(premier.success, true);
+
+  pont.arrêter();
+
+  pont.démarrer();
+
+  try {
+    const second = await pont.executer({
+      name: "heure_dans",
+      arguments: {
+        minutes: 30,
+      },
+    });
+
+    assert.equal(second.success, true);
+    assert.equal(typeof second.result, "string");
+  } finally {
+    pont.arrêter();
+  }
 });
 
-test("un outil Python peut recevoir des arguments depuis TypeScript", async () => {
-  const resultat = await executerAvecPython({
-    name: "heure_dans",
-    arguments: {
-      minutes: 30,
-    },
-  });
+test("le pont Python signale l arrêt du processus pendant une exécution", async () => {
+  const pont = new PontPython();
 
-  assert.equal(resultat.success, true);
-  assert.equal(typeof resultat.result, "string");
-});
+  pont.démarrer();
 
-test("une erreur Python est retournée à TypeScript", async () => {
-  const resultat = await executerAvecPython({
-    name: "outil_inexistant",
+  const execution = pont.executer({
+    name: "heure_actuelle",
     arguments: {},
   });
 
-  assert.equal(resultat.success, false);
-  assert.deepEqual(resultat.error, {
-    type: "OutilInconnu",
-    message: 'L outil "outil_inexistant" n existe pas.',
-  });
+  pont.arrêter();
+
+  await assert.rejects(
+    execution,
+    /Le processus Python a été arrêté pendant une exécution\./,
+  );
 });
