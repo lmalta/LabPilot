@@ -122,12 +122,13 @@ LabPilot ne sera donc pas réécrit brutalement dans un autre langage. L'objecti
 
 ### Premier socle TypeScript
 
-Le projet dispose désormais d'un premier socle TypeScript :
+Le projet dispose désormais d'un premier socle TypeScript, destiné à accueillir progressivement les composants d'orchestration de LabPilot.
 
 ```text
 src/
 ├── index.ts
-└── labpilot.ts
+├── labpilot.ts
+└── types.ts
 
         │
         ▼
@@ -139,25 +140,7 @@ src/
         │
         ▼
       dist/
-```
 
-Le code TypeScript est vérifié avec :
-
-```bash
-npm run typecheck
-```
-
-et compilé avec :
-
-```bash
-npm run build
-```
-
-Les fichiers générés dans `dist/` ainsi que les dépendances installées dans `node_modules/` ne sont pas versionnés.
-
-Les dépendances Python restent gérées dans `requirements.txt`, tandis que les dépendances Node.js/TypeScript sont gérées dans `package.json` et `package-lock.json`.
-
----
 
 ## 🔒 Sécurité
 
