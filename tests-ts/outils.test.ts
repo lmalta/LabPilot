@@ -5,6 +5,7 @@ import test from "node:test";
 import { definitionsOutils } from "../src/labpilot.js";
 import type { ToolExecution, ToolResult } from "../src/types.js";
 import { executerOutil } from "../src/outils.js";
+import { executerAvecPython } from "../src/pont-python.js";
 
 const outilsAttendus = [
   "heure_actuelle",
@@ -149,6 +150,41 @@ test("un outil connu conserve ses arguments", () => {
 
 test("un outil inconnu retourne une erreur", () => {
   const resultat = executerOutil({
+    name: "outil_inexistant",
+    arguments: {},
+  });
+
+  assert.equal(resultat.success, false);
+  assert.deepEqual(resultat.error, {
+    type: "OutilInconnu",
+    message: 'L outil "outil_inexistant" n existe pas.',
+  });
+});
+
+test("un outil peut être exécuté par Python depuis TypeScript", async () => {
+  const resultat = await executerAvecPython({
+    name: "heure_actuelle",
+    arguments: {},
+  });
+
+  assert.equal(resultat.success, true);
+  assert.equal(typeof resultat.result, "string");
+});
+
+test("un outil Python peut recevoir des arguments depuis TypeScript", async () => {
+  const resultat = await executerAvecPython({
+    name: "heure_dans",
+    arguments: {
+      minutes: 30,
+    },
+  });
+
+  assert.equal(resultat.success, true);
+  assert.equal(typeof resultat.result, "string");
+});
+
+test("une erreur Python est retournée à TypeScript", async () => {
+  const resultat = await executerAvecPython({
     name: "outil_inexistant",
     arguments: {},
   });
