@@ -243,6 +243,72 @@ test("L orchestrateur limite le nombre d itérations", async () => {
   }
 });
 
+test("l orchestrateur transmet le résultat de etat_systeme à Ollama", async () => {
+  const messagesRecus: Message[][] = [];
+
+  const ollama = {
+    chat: async (messages: Message[]) => {
+      messagesRecus.push(messages);
+
+      if (messagesRecus.length === 1) {
+        return {
+          role: "assistant" as const,
+          content: "",
+          tool_calls: [
+            {
+              function: {
+                name: "etat_systeme",
+                arguments: {},
+              },
+            },
+          ],
+        };
+      }
+
+      const messageOutil = messages[messages.length - 1];
+
+      assert.equal(messageOutil?.role, "tool");
+      assert.equal(messageOutil?.tool_name, "etat_systeme");
+
+      const resultat = JSON.parse(messageOutil.content) as {
+        success: boolean;
+        result?: {
+          nom_machine?: string;
+          systeme?: string;
+        };
+      };
+
+      assert.equal(resultat.success, true);
+      assert.equal(resultat.result?.nom_machine, "testGPU");
+      assert.equal(resultat.result?.systeme, "Linux");
+
+      return {
+        role: "assistant" as const,
+        content: "État du système vérifié.",
+      };
+    },
+  } as OllamaClient;
+
+  const pont = new PontPython();
+  pont.démarrer();
+
+  try {
+    const orchestrateur = new Orchestrateur(pont, ollama);
+
+    const resultat = await orchestrateur.traiter([
+      {
+        role: "user",
+        content: "Quel est l'état de mon serveur ?",
+      },
+    ]);
+
+    assert.equal(resultat.content, "État du système vérifié.");
+    assert.equal(messagesRecus.length, 2);
+  } finally {
+    pont.arrêter();
+  }
+});
+
 test("l orchestrateur conserve l historique entre plusieurs appels Ollama", async () => {
   const messagesRecus: Message[][] = [];
 
