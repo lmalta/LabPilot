@@ -66,30 +66,26 @@ export class Orchestrateur {
       return reponse;
     }
 
-    const appel = reponse.tool_calls[0];
+      historique.ajouter(reponse);
 
-    if (appel === undefined) {
-      throw new Error(
-        "Ollama a retourné une liste d appels d outils vide.",
-      );
-    }
+      for (const appel of reponse.tool_calls) {
+        const execution =
+          convertirToolCallEnExecution(appel);
 
-    const execution =
-      convertirToolCallEnExecution(appel);
+        const resultat = await executerOutil(
+          this.pont,
+          execution,
+        );
 
-    const resultat = await executerOutil(
-      this.pont,
-      execution,
-    );
+        const messageOutil =
+          convertirResultatEnMessageOutil(
+            execution.name,
+            resultat,
+          );
 
-    const messageOutil =
-      convertirResultatEnMessageOutil(
-        execution.name,
-        resultat,
-      );
+        historique.ajouter(messageOutil);
+      }
 
-    historique.ajouter(reponse);
-    historique.ajouter(messageOutil);
   }
 
   throw new Error(

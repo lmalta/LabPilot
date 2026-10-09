@@ -156,13 +156,14 @@ Ces types constituent un premier contrat commun pour les futurs composants TypeS
 
 Le projet dispose également d'un catalogue TypeScript décrivant les outils disponibles pour l'agent.
 
-Les définitions actuelles correspondent aux cinq outils existants côté Python :
+Les définitions actuelles correspondent aux six outils disponibles côté Python :
 
 - `heure_actuelle` ;
 - `heure_dans` ;
 - `etat_systeme` ;
 - `etat_gpu` ;
-- `etat_ollama`.
+- `etat_ollama` ;
+- `etat_home_assistant`.
 
 TypeScript décrit ainsi le contrat des outils sans remplacer leur implémentation Python.
 
@@ -172,7 +173,7 @@ Cette séparation permet d'introduire progressivement TypeScript dans l'orchestr
 
 Les tests TypeScript utilisent le module de test natif de Node.js.
 
-Le catalogue des outils est notamment vérifié afin de s'assurer que les cinq outils attendus sont bien présents.
+Le catalogue des outils est notamment vérifié afin de s'assurer que les six outils attendus sont bien présents.
 
 Les vérifications TypeScript peuvent être effectuées avec :
 
@@ -326,6 +327,10 @@ Lorsqu'un outil est demandé, TypeScript :
 4. transforme le résultat en message d'outil ;
 5. ajoute la réponse du modèle et le résultat à l'historique ;
 6. renvoie l'historique mis à jour à Ollama.
+
+L'orchestrateur traite tous les appels d'outils présents dans une même réponse du modèle, dans l'ordre reçu. Il ajoute chaque résultat à l'historique avant de solliciter à nouveau Ollama.
+
+Une erreur fonctionnelle renvoyée par un outil, par exemple un outil inconnu, est transmise au modèle comme résultat d'outil. Elle n'empêche pas l'exécution des autres appels présents dans la même réponse. Les erreurs techniques du pont Python, elles, restent des exceptions.
 
 Cette boucle permet au modèle de demander plusieurs outils successivement avant de produire sa réponse finale.
 
@@ -523,7 +528,10 @@ L'objectif est de conserver un projet :
 
 ### Phase 3 — Intégration du Homelab
 
-- [ ] Intégrer Home Assistant
+- [x] Intégrer Home Assistant en lecture seule
+  - [x] Récupérer la version de Home Assistant
+  - [x] Compter les entités et les répartir par domaine
+  - [ ] Tester explicitement les erreurs de connexion, d'authentification et les réponses API invalides
 - [ ] Intégrer Proxmox
 - [ ] Ajouter des outils réseau
 - [ ] Ajouter des outils de stockage
