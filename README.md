@@ -1,849 +1,601 @@
 # LabPilot
 
-> Agent IA local pour la supervision, l'automatisation et la gestion d'une infrastructure Homelab.
+> Agent IA local pour la supervision, l'analyse et, à terme, l'automatisation contrôlée d'une infrastructure Homelab.
 
-**État du projet :** 🚧 Développement initial
-
----
-
-## 🎯 Vision du projet
-
-LabPilot a pour objectif de devenir un **agent IA local capable d'observer, d'analyser et progressivement d'interagir avec une infrastructure Homelab**.
-
-Le projet commence volontairement avec une approche **en lecture seule**.
-
-L'agent devra progressivement être capable de :
-
-- observer l'état de l'infrastructure ;
-- interroger différents services et systèmes ;
-- analyser les informations obtenues ;
-- raisonner sur leur état ;
-- détecter d'éventuels problèmes ;
-- expliquer ses observations ;
-- proposer des actions ;
-- puis, à terme, exécuter certaines actions de manière contrôlée.
-
-La sécurité, la transparence et le contrôle humain resteront des principes fondamentaux du projet.
+**État du projet :** développement actif — agent en lecture seule.
 
 ---
 
-## 🧠 Principe de fonctionnement
+## Sommaire
 
-LabPilot repose sur une architecture d'agent capable d'utiliser des outils externes pour obtenir des informations.
-
-Le fonctionnement général est le suivant :
-
-```text
-Question de l'utilisateur
-         │
-         ▼
-    Modèle IA local
-         │
-         ▼
-       Agent
-         │
-         ├──────► Outil
-         │          │
-         │          ▼
-         │       Résultat
-         │          │
-         └──────────┘
-         │
-         ▼
-      Analyse
-         │
-         ▼
-   Réponse utilisateur
-```
-
-L'agent doit être capable de déterminer lorsqu'un outil est nécessaire, de l'utiliser, d'interpréter son résultat et de poursuivre son raisonnement si nécessaire.
+- [Vision et principes](#-vision-et-principes)
+- [Architecture](#-architecture)
+- [Fonctionnement de l'agent](#-fonctionnement-de-lagent)
+- [Prérequis](#-prérequis)
+- [Installation](#-installation)
+- [Configuration](#-configuration)
+- [Intégration Proxmox](#-intégration-proxmox)
+- [Sécurité Proxmox : rôle, ACL et token API](#-sécurité-proxmox--rôle-acl-et-token-api)
+- [Certificat TLS de Proxmox](#-certificat-tls-de-proxmox)
+- [Lancement et utilisation](#-lancement-et-utilisation)
+- [Tests et validation](#-tests-et-validation)
+- [Dépannage](#-dépannage)
+- [Sécurité générale](#-sécurité-générale)
+- [Feuille de route](#-feuille-de-route)
+- [Structure du projet](#-structure-du-projet)
 
 ---
 
-## 🏗️ Architecture initiale
+## 🎯 Vision et principes
 
-La première version de LabPilot sera volontairement simple.
+LabPilot est un agent IA local conçu pour observer une infrastructure Homelab, collecter des informations, les analyser et les présenter en langage naturel.
 
-```text
-                        LabPilot
-                           │
-                    ┌──────┴──────┐
-                    │    Agent    │
-                    └──────┬──────┘
-                           │
-             ┌─────────────┼─────────────┐
-             ▼             ▼             ▼
-          Système         GPU          Ollama
-           outils        outils          API
-```
+L'évolution prévue est progressive :
 
-Les premiers outils seront exclusivement destinés à la **lecture et à l'observation**.
+1. Observer l'infrastructure.
+2. Comprendre les informations collectées.
+3. Détecter des incohérences et des problèmes.
+4. Expliquer les résultats.
+5. Proposer des actions.
+6. Demander une confirmation avant toute action autorisée.
+7. Exécuter l'action et vérifier son résultat.
 
-Les premières capacités prévues sont :
+La priorité actuelle est la **supervision en lecture seule**.
 
-- état du système ;
-- état du GPU ;
-- état d'Ollama ;
-- modèles disponibles ;
-- informations générales sur l'environnement ;
-- limiter le nombre de cycles successifs d'appels d'outils pour empêcher les boucles incontrôlées ;
-- consulter l'état des GPU NVIDIA visibles par le système ;
-- consulter l'état du serveur Ollama, sa version, les modèles disponibles et les modèles actuellement actifs ;
-- interpréter les résultats des outils et les utiliser pour formuler une réponse.
+Les principes fondamentaux sont :
 
-De nouvelles intégrations seront ajoutées progressivement.
+- exécution locale des modèles IA ;
+- séparation entre orchestration et exécution des outils ;
+- composants indépendants et testables ;
+- permissions minimales ;
+- secrets exclus du dépôt Git ;
+- documentation des opérations nécessaires à la reproduction de l'installation ;
+- aucune action d'administration sans contrôle explicite.
 
 ---
 
-## 🧩 Architecture logicielle
+## 🏗️ Architecture
 
-LabPilot adopte progressivement une architecture mixte **TypeScript / Python**.
-
-TypeScript et Node.js seront progressivement utilisés pour les composants liés à :
-
-- l'orchestration de l'agent ;
-- les API ;
-- les outils ;
-- les communications WebSocket ;
-- la future interface web ;
-- les composants nécessitant une forte intégration avec l'écosystème JavaScript/TypeScript.
-
-Python reste privilégié pour les composants liés à :
-
-- l'IA et aux services de modèles ;
-- PyTorch et CUDA ;
-- le traitement documentaire ;
-- les calculs et traitements scientifiques ;
-- les composants exploitant directement l'écosystème Python.
-
-Cette évolution se fera progressivement, par fonctionnalités indépendantes et validées.
-
-LabPilot ne sera donc pas réécrit brutalement dans un autre langage. L'objectif est d'introduire TypeScript là où il apporte une réelle valeur, tout en conservant Python pour les domaines où son écosystème est particulièrement adapté.
-
-### Premier socle TypeScript
-
-Le projet dispose désormais d'un premier socle TypeScript, destiné à accueillir progressivement les composants d'orchestration de LabPilot.
-
-```text
-src/
-├── index.ts
-├── labpilot.ts
-└── types.ts
-
-       │
-       ▼
-
-    TypeScript
-       │
-       ▼
-      tsc
-       │
-       ▼
-     dist/
-```
-
-Le premier composant introduit définit les types utilisés pour représenter les messages échangés par l'agent :
-
-- messages système ;
-- messages utilisateur ;
-- réponses de l'assistant ;
-- messages provenant des outils ;
-- appels d'outils.
-
-Ces types constituent un premier contrat commun pour les futurs composants TypeScript de LabPilot.
-
-### Catalogue TypeScript des outils
-
-Le projet dispose également d'un catalogue TypeScript décrivant les outils disponibles pour l'agent.
-
-Les définitions actuelles correspondent aux six outils disponibles côté Python :
-
-- `heure_actuelle` ;
-- `heure_dans` ;
-- `etat_systeme` ;
-- `etat_gpu` ;
-- `etat_ollama` ;
-- `etat_home_assistant`.
-
-TypeScript décrit ainsi le contrat des outils sans remplacer leur implémentation Python.
-
-Cette séparation permet d'introduire progressivement TypeScript dans l'orchestration de LabPilot tout en conservant Python pour l'exécution des composants déjà existants.
-
-### Tests TypeScript
-
-Les tests TypeScript utilisent le module de test natif de Node.js.
-
-Le catalogue des outils est notamment vérifié afin de s'assurer que les six outils attendus sont bien présents.
-
-Les vérifications TypeScript peuvent être effectuées avec :
-
-```bash
-npm run typecheck
-```
-
-La compilation du projet est effectuée avec :
-
-```bash
-npm run build
-```
-
-Les tests TypeScript sont exécutés avec :
-
-```bash
-npm run test:ts
-```
-
-Cette commande compile d'abord le projet puis exécute les tests TypeScript compilés.
-
-Les fichiers générés dans `dist/` ainsi que les dépendances installées dans `node_modules/` ne sont pas versionnés.
-
-Les données locales de LabPilot sont également exclues du dépôt Git.
-
-Les dépendances Python restent gérées dans `requirements.txt`, tandis que les dépendances Node.js/TypeScript sont gérées dans `package.json` et `package-lock.json`.
-
-### Pont TypeScript → Python persistant
-
-Le pont entre TypeScript et Python repose maintenant sur un processus Python persistant.
-
-TypeScript démarre le processus Python une seule fois, puis peut lui transmettre plusieurs demandes d'exécution successives sans recréer le processus à chaque appel.
-
-```text
-TypeScript
-   │
-   ▼
-PontPython
-   │
-   ├── démarrer()
-   │
-   ├── executer(outil 1) ──┐
-   ├── executer(outil 2) ──┤
-   ├── executer(outil 3) ──┤
-   │                        │
-   │                   processus Python
-   │                        │
-   └── arrêter() ───────────┘
-```
-
-La communication utilise un protocole simple basé sur JSON :
-
-- une requête JSON par ligne ;
-- une réponse JSON par ligne ;
-- les arguments de l'outil sont transmis dans la requête ;
-- le résultat ou l'erreur est retourné dans la réponse.
-
-Le cycle de vie du pont est contrôlé par trois opérations :
-
-- `démarrer()` démarre le processus Python ;
-- `executer()` transmet une exécution d'outil et attend sa réponse ;
-- `arrêter()` termine le processus Python.
-
-L'exécution des outils depuis TypeScript utilise directement ce pont persistant.
-
-La fonction `executerOutil()` reçoit une instance de `PontPython` et lui transmet la demande d'exécution. Elle vérifie d'abord que l'outil demandé existe dans le catalogue TypeScript, puis délègue son exécution au processus Python.
-
-Le cycle d'exécution est donc le suivant :
-
-```text
-TypeScript
-   │
-   ▼
-executerOutil()
-   │
-   ├── vérification de l'outil
-   │
-   ▼
-PontPython.executer()
-   │
-   ▼
-processus Python persistant
-   │
-   ▼
-outil Python réel
-   │
-   ▼
-ToolResult
-```
-
-Les exécutions sont actuellement **séquentielles** : une seule demande peut être en attente à la fois. Une deuxième exécution lancée avant la réception de la première réponse est refusée explicitement.
-
-Le pont gère également les erreurs de communication et l'arrêt du processus Python. Après un arrêt, le pont peut être démarré à nouveau et utilisé pour de nouvelles exécutions.
-
-Cette architecture permet à TypeScript de devenir progressivement l'orchestrateur principal de LabPilot tout en conservant Python pour l'exécution des outils et les futurs services liés à l'IA, au traitement documentaire et au calcul.
-
-### Orchestration TypeScript
-
-L'orchestration de l'agent est maintenant prise en charge par TypeScript.
-
-Le rôle de TypeScript est de coordonner les échanges entre l'utilisateur, le modèle Ollama et les outils exécutés par Python.
-
-Le cycle d'orchestration est le suivant :
+LabPilot adopte progressivement une architecture mixte TypeScript / Python.
 
 ```text
 Utilisateur
-   │
-   ▼
+    |
+    v
 Orchestrateur TypeScript
-   │
-   ▼
-Ollama
-   │
-   ├── réponse finale ───────────────► Utilisateur
-   │
-   └── demande d'outil
-           │
-           ▼
-      executerOutil()
-           │
-           ▼
-       PontPython
-           │
-           ▼
-       outil Python
-           │
-           ▼
-       ToolResult
-           │
-           ▼
-    message d'outil
-           │
-           ▼
-       historique
-           │
-           ▼
-         Ollama
-           │
-           └── ...
+    |
+    +------ OllamaClient ------> API Ollama ------> Modèle local
+    |
+    +------ Catalogue des outils
+                  |
+                  v
+             executerOutil()
+                  |
+                  v
+               PontPython
+                  |
+                  v
+          Processus Python persistant
+                  |
+                  v
+             Outils Python
+                  |
+          +-------+--------+
+          |       |        |
+          v       v        v
+       Système   GPU   Homelab
+                         |
+                    +----+----+
+                    |         |
+                    v         v
+                Home      Proxmox
+               Assistant
 ```
 
-`OllamaClient` est responsable de la communication avec l'API Ollama. Il transmet au modèle l'historique des messages ainsi que le catalogue des outils disponibles.
+### TypeScript et Node.js
 
-`Orchestrateur` est responsable de la boucle d'exécution. Il analyse la réponse du modèle pour déterminer si celui-ci demande l'utilisation d'un outil ou s'il fournit directement une réponse finale.
+TypeScript prend progressivement en charge :
 
-Lorsqu'un outil est demandé, TypeScript :
+- l'orchestration de l'agent ;
+- les échanges avec Ollama ;
+- la déclaration des outils accessibles au modèle ;
+- la boucle d'appels d'outils ;
+- l'historique des conversations ;
+- la persistance SQLite ;
+- les communications futures avec une interface web et des API.
 
-1. convertit l'appel du modèle en `ToolExecution` ;
-2. transmet l'exécution à `executerOutil()` ;
-3. récupère le `ToolResult` fourni par Python ;
-4. transforme le résultat en message d'outil ;
-5. ajoute la réponse du modèle et le résultat à l'historique ;
-6. renvoie l'historique mis à jour à Ollama.
+### Python
 
-L'orchestrateur traite tous les appels d'outils présents dans une même réponse du modèle, dans l'ordre reçu. Il ajoute chaque résultat à l'historique avant de solliciter à nouveau Ollama.
+Python reste utilisé pour :
 
-Une erreur fonctionnelle renvoyée par un outil, par exemple un outil inconnu, est transmise au modèle comme résultat d'outil. Elle n'empêche pas l'exécution des autres appels présents dans la même réponse. Les erreurs techniques du pont Python, elles, restent des exceptions.
+- l'exécution des outils ;
+- la supervision du système et du GPU ;
+- les interactions avec les API externes ;
+- les futurs traitements documentaires et services IA ;
+- les traitements nécessitant l'écosystème Python.
 
-Cette boucle permet au modèle de demander plusieurs outils successivement avant de produire sa réponse finale.
+### Pont TypeScript → Python
 
-Une limite de **10 itérations d'orchestration** est appliquée. Si le modèle continue à demander des outils après cette limite, l'orchestrateur arrête l'exécution et retourne une erreur contrôlée.
+Le pont Python est un processus persistant utilisant un protocole JSON Lines :
 
-Cette limite constitue une protection contre les boucles d'appels d'outils incontrôlées.
+- une requête JSON par ligne ;
+- une réponse JSON par ligne ;
+- transmission des arguments ;
+- retour du résultat ou d'une erreur ;
+- gestion contrôlée du cycle de vie du processus.
 
-La responsabilité des composants est ainsi séparée :
+Les exécutions sont actuellement séquentielles. L'orchestrateur applique une limite de 10 itérations afin d'éviter les boucles incontrôlées d'appels d'outils.
 
-```text
-TypeScript
-├── orchestration de l'agent
-├── communication avec Ollama
-├── historique des messages
-├── détection des appels d'outils
-├── contrôle de la boucle
-└── limite d'itérations
+---
 
-Python
-├── exécution des outils
-├── PyTorch / CUDA
-├── traitement documentaire
-└── futurs services IA et calcul
-```
+## 🧠 Fonctionnement de l'agent
 
-TypeScript ne dépend pas de l'implémentation interne des outils Python. Il manipule uniquement les structures `ToolExecution` et `ToolResult` ainsi que le catalogue des outils.
+L'orchestrateur transmet à Ollama l'historique de la conversation et les définitions des outils disponibles.
 
-Cette séparation permet de faire évoluer progressivement LabPilot vers une architecture dans laquelle TypeScript constitue l'orchestrateur principal, tandis que Python reste spécialisé dans l'exécution des outils et les traitements nécessitant son écosystème.
+Lorsque le modèle demande un outil :
 
-### Historique des messages TypeScript
+1. TypeScript vérifie que l'outil est déclaré.
+2. La demande et ses arguments sont transmis au pont Python.
+3. Python exécute l'outil.
+4. Le résultat est retourné à TypeScript.
+5. Le résultat est ajouté à l'historique.
+6. L'orchestrateur sollicite à nouveau le modèle.
+7. Le cycle continue jusqu'à une réponse finale ou à l'atteinte de la limite d'itérations.
 
-La gestion de l'historique des messages est centralisée dans le composant `HistoriqueMessages`.
+Le modèle ne doit pas être considéré comme une source de vérité pour les données techniques. Lorsqu'un outil fournit des compteurs ou des résultats structurés, ceux-ci doivent être privilégiés et leur cohérence vérifiée.
 
-L'historique peut être conservé en mémoire et persisté dans un dépôt de conversations. Cette séparation permet à l'orchestrateur de manipuler l'historique sans dépendre directement de SQLite.
+Les erreurs fonctionnelles des outils peuvent être transmises au modèle. Les erreurs techniques du pont doivent être traitées séparément.
 
-L'architecture de persistance est organisée ainsi :
+### Historique des conversations
 
-```text
-HistoriqueMessages
-        │
-        ▼
-DepotConversations
-        │
-        ▼
-DepotConversationsSQLite
-        │
-        ▼
-     SQLite
-```
+L'historique est géré par `HistoriqueMessages` et les composants de dépôt de conversations.
 
-`DepotConversations` définit l'interface du dépôt. `DepotConversationsSQLite` en fournit actuellement l'implémentation avec une base SQLite locale.
-
-`HistoriqueMessages` permet :
-
-- d'initialiser un historique avec des messages existants ;
-- d'ajouter de nouveaux messages ;
-- de récupérer une copie de l'historique sans exposer directement son état interne ;
-- de sauvegarder les nouveaux messages dans un dépôt ;
-- de recharger un historique existant depuis un dépôt ;
-- d'éviter de sauvegarder plusieurs fois les mêmes messages lors de sauvegardes successives.
-
-La base SQLite utilisée par défaut est stockée dans :
+La persistance actuelle repose sur SQLite :
 
 ```text
 data/labpilot.db
 ```
 
-Le répertoire `data/` est exclu du dépôt Git afin que les données locales des conversations ne soient jamais versionnées.
+Les messages utilisateur, réponses de l'assistant, appels d'outils et résultats peuvent être conservés afin de reprendre une conversation.
 
-L'orchestrateur peut également utiliser un `HistoriqueMessages` déjà existant. Cela permet de recharger une conversation persistée avant de poursuivre son traitement.
+Le répertoire `data/` contient des données locales et ne doit pas être versionné.
 
-Lorsqu'un outil est utilisé, l'historique conserve notamment :
+---
 
-```text
-message utilisateur
-        │
-        ▼
-réponse Ollama avec appel d'outil
-        │
-        ▼
-résultat de l'outil
-        │
-        ▼
-nouvel appel Ollama
-        │
-        ▼
-réponse finale
+## 🧰 Outils disponibles
+
+Le catalogue évolue au fil des intégrations. Il comprend notamment :
+
+- `heure_actuelle` : obtenir l'heure courante ;
+- `heure_dans` : calculer une heure future ;
+- `etat_systeme` : consulter les informations générales du système ;
+- `etat_gpu` : consulter l'état du GPU ;
+- `etat_ollama` : consulter le serveur Ollama et les modèles ;
+- `etat_home_assistant` : consulter des informations de Home Assistant ;
+- `etat_proxmox` : consulter les nœuds et machines du cluster Proxmox.
+
+Les outils Proxmox sont conçus pour fonctionner en lecture seule.
+
+---
+
+## 🖥️ Prérequis
+
+L'environnement actuel utilise :
+
+- Linux / Ubuntu ;
+- Python et un environnement virtuel ;
+- Node.js et npm ;
+- TypeScript ;
+- Ollama accessible par API ;
+- Git ;
+- pytest pour les tests Python.
+
+Les versions exactes doivent être relevées sur la machine lors d'une reconstruction de l'environnement.
+
+---
+
+## 📦 Installation
+
+Depuis la racine du dépôt :
+
+```bash
+cd ~/LabPilot
+```
+
+### Environnement Python
+
+Si l'environnement virtuel existe déjà :
+
+```bash
+source .venv/bin/activate
+```
+
+Pour installer les dépendances Python dans un environnement neuf :
+
+```bash
+python3 -m venv .venv
+source .venv/bin/activate
+python -m pip install --upgrade pip
+pip install -r requirements.txt
+```
+
+### Dépendances Node.js
+
+```bash
+npm ci
+```
+
+### Compilation
+
+```bash
+npm run typecheck
+npm run build
 ```
 
 ---
 
-## 🔒 Sécurité
+## ⚙️ Configuration
 
-LabPilot est conçu dès le départ avec l'objectif de pouvoir devenir un projet public sur GitHub.
+LabPilot utilise un fichier `.env` local pour les paramètres propres à l'installation.
 
-Le dépôt ne doit donc jamais contenir :
+Le fichier `.env.example` fournit un modèle sans secrets réels.
 
-- mot de passe ;
-- clé API ;
-- jeton d'accès ;
-- clé privée ;
-- adresse IP interne réelle ;
-- nom d'hôte interne sensible ;
-- identifiant ou mot de passe intégré dans une URL ;
-- information personnelle ;
-- information spécifique permettant d'identifier ou de compromettre l'infrastructure réelle.
+Créer le fichier local si nécessaire :
 
-Les informations propres à une installation doivent rester en dehors du dépôt.
+```bash
+cp .env.example .env
+nano .env
+```
 
-Elles pourront être fournies par :
+Ne pas écraser un `.env` existant contenant une configuration valide.
 
-- variables d'environnement ;
-- fichiers de configuration locaux ignorés par Git ;
-- mécanismes de gestion de secrets adaptés à l'environnement d'exécution.
+### Ollama
 
-Exemple :
+La configuration doit notamment définir l'adresse de l'API Ollama et le modèle utilisé, conformément aux variables attendues par le code.
+
+Exemple d'adresse :
 
 ```text
 OLLAMA_URL=http://<ADRESSE_OLLAMA>:11434
-HOME_ASSISTANT_URL=http://<ADRESSE_HOME_ASSISTANT>:8123
-HOME_ASSISTANT_TOKEN=<VOTRE_JETON>
 ```
 
-### Principe fondamental
+### Home Assistant
 
-> **Tout ce qui est commité dans LabPilot doit pouvoir être rendu public sans nettoyage préalable.**
+L'intégration Home Assistant utilise une URL et un jeton d'accès local. Les noms exacts des variables doivent correspondre à ceux de `.env.example` et du module de configuration.
 
----
+### Proxmox
 
-## 🧪 Méthode de développement
+Les variables attendues sont :
 
-LabPilot sera développé progressivement.
+```dotenv
+PROXMOX_URL=https://<NOM_DNS_OU_IP_PROXMOX>:8006
+PROXMOX_TOKEN_ID=<UTILISATEUR>@pve!<NOM_TOKEN>
+PROXMOX_TOKEN_SECRET=<SECRET_DU_TOKEN>
+```
 
-Chaque fonctionnalité suivra autant que possible le cycle :
+Exemple de format d'identifiant de token :
 
 ```text
-Conception
-   ↓
-Développement
-   ↓
-Test
-   ↓
-Validation
-   ↓
-Documentation
-   ↓
-Commit Git
+labpilot@pve!labpilot-readonly
 ```
 
-Chaque composant important sera testé indépendamment avant son intégration au fonctionnement global de l'agent.
+Cet exemple est un identifiant de démonstration, pas un secret.
 
-L'objectif est de conserver un projet :
-
-- simple à comprendre ;
-- modulaire ;
-- testable ;
-- documenté ;
-- sécurisé ;
-- facilement évolutif.
+**Ne jamais mettre le véritable secret dans le README, dans `.env.example`, dans une commande enregistrée dans l'historique du shell ou dans Git.**
 
 ---
 
-## 🗺️ Feuille de route
+## 🖥️ Intégration Proxmox
 
-### Phase 1 — Fondations
+### Objectif
 
-- [x] Créer le dépôt GitHub
-- [x] Définir le nom du projet
-- [x] Définir le périmètre initial
-- [x] Définir les principes de sécurité
-- [x] Créer la structure initiale du projet
-- [x] Mettre en place la gestion de la configuration
-- [x] Mettre en place la communication avec le modèle IA local
-- [x] Séparer la logique de l'agent de la communication avec Ollama
-- [x] Mettre en place un historique de conversation
+L'outil `etat_proxmox` interroge l'API REST de Proxmox VE en lecture seule.
 
-### Phase 2 — Premier agent en lecture seule
+Il récupère les ressources du cluster, notamment :
 
-- [x] Mettre en place la boucle de fonctionnement de l'agent
-- [x] Définir le mécanisme de déclaration des outils
-- [x] Permettre au modèle de demander l'utilisation d'un outil
-- [x] Mettre en place l'exécution des outils
-- [x] Permettre la transmission d'arguments aux outils
-- [x] Renvoyer le résultat d'un outil au modèle
-- [x] Générer une réponse finale à partir du résultat de l'outil
-- [x] Tester le choix automatique des outils
-- [x] Tester le fonctionnement des outils avec l'historique de conversation
-- [x] Créer l'outil d'état du système
-- [x] Créer l'outil d'état du GPU
-- [x] Créer l'outil d'état d'Ollama
-- [x] Tester le raisonnement à partir des résultats
-- [x] Gérer plusieurs appels d'outils successifs
-- [x] Gérer les erreurs d'exécution des outils
-- [x] Empêcher les boucles d'appels d'outils incontrôlées
+- les nœuds ;
+- les machines virtuelles QEMU ;
+- les conteneurs LXC ;
+- les états des machines ;
+- les compteurs globaux par type et par état.
 
-### Phase 3 — Intégration du Homelab
-
-- [x] Intégrer Home Assistant en lecture seule
-  - [x] Récupérer la version de Home Assistant
-  - [x] Compter les entités et les répartir par domaine
-  - [ ] Tester explicitement les erreurs de connexion, d'authentification et les réponses API invalides
-- [ ] Intégrer Proxmox
-- [ ] Ajouter des outils réseau
-- [ ] Ajouter des outils de stockage
-- [ ] Ajouter des outils de supervision
-- [ ] Améliorer les rapports d'état
-
-### Phase 4 — Automatisation contrôlée
-
-- [ ] Définir les actions autorisées
-- [ ] Mettre en place les demandes de confirmation
-- [ ] Journaliser les actions
-- [ ] Définir les permissions
-- [ ] Tester les erreurs et les situations de récupération
-- [ ] Empêcher les actions dangereuses non confirmées
-
-### Phase 5 — Architecture de production
-
-- [ ] Séparer LabPilot du serveur de modèle IA
-- [ ] Déployer LabPilot comme service indépendant
-- [ ] Conteneuriser l'application
-- [ ] Étudier un déploiement K3s
-- [ ] Améliorer la supervision
-- [ ] Renforcer la sécurité
-
----
-
-## 📁 Structure du projet
-
-La structure actuelle du projet évolue progressivement avec l'intégration de TypeScript.
+Le point d'accès utilisé est :
 
 ```text
-LabPilot/
-├── src/
-│   ├── index.ts
-│   ├── labpilot.ts
-│   ├── types.ts
-│   ├── historique.ts
-│   ├── orchestrateur.ts
-│   ├── ollama-client.ts
-│   ├── pont-python.ts
-│   ├── depot-conversations.ts
-│   ├── depot-conversations-sqlite.ts
-│   └── ...
-├── tests-ts/
-│   └── ...
-├── data/
-│   └── labpilot.db
-├── package.json
-├── package-lock.json
-├── requirements.txt
-└── README.md
+GET /api2/json/cluster/resources
 ```
 
-Le répertoire `data/` contient les données locales de LabPilot et n'est pas versionné.
+Le port HTTPS habituel de l'interface et de l'API Proxmox est `8006`.
 
-Les fichiers TypeScript de `src/` contiennent progressivement les composants d'orchestration et les contrats utilisés par l'agent.
+### Données et états
 
-Les fichiers de `tests-ts/` contiennent les tests des composants TypeScript.
+Les types de machines sont distingués :
 
-Les composants Python restent utilisés pour l'exécution des outils et les traitements spécialisés.
+- `VM` : machine virtuelle QEMU ;
+- `conteneur` : conteneur LXC.
 
----
+Les états possibles comprennent :
 
-## 🤖 Modèle IA local
+- `running` : en cours d'exécution ;
+- `stopped` : arrêté ;
+- `unknown` : état non déterminable par les informations disponibles.
 
-LabPilot est conçu pour fonctionner avec des modèles IA hébergés localement.
+Un nœud hors ligne peut empêcher la récupération de l'état actuel de ses machines. Dans ce cas, `unknown` ne doit pas être assimilé à `stopped`.
 
-L'environnement initial utilise **Ollama** comme moteur d'exécution des modèles.
+Les compteurs `machines_par_type`, `machines_par_etat` et `machines_par_type_et_etat` doivent provenir des données calculées par l'outil. Le modèle ne doit pas inventer de noms ni reconstruire des compteurs contradictoires.
 
-L'agent communiquera avec le moteur IA par API afin de conserver une séparation claire entre :
+### Configuration de l'accès
 
-- le modèle IA ;
-- le moteur d'exécution ;
-- la logique de l'agent ;
-- les outils disponibles.
+L'intégration nécessite :
 
-Cette séparation permettra de faire évoluer le modèle utilisé sans devoir modifier l'architecture générale de LabPilot.
+1. un utilisateur Proxmox dédié ou explicitement choisi ;
+2. un rôle en lecture seule ;
+3. une ACL affectée au périmètre approprié ;
+4. un token API ;
+5. le secret du token dans le fichier `.env` local ;
+6. le certificat CA permettant de vérifier le serveur HTTPS.
 
----
-
-## 🏠 Infrastructure cible
-
-LabPilot est destiné à pouvoir interagir avec différents composants d'un Homelab, notamment :
-
-- Home Assistant ;
-- Proxmox ;
-- serveurs Linux ;
-- serveurs GPU ;
-- serveurs de modèles IA locaux ;
-- services réseau ;
-- stockage ;
-- systèmes de supervision.
-
-Les informations spécifiques à l'infrastructure réelle ne seront jamais intégrées au dépôt.
+La création du token et des droits est détaillée dans la section suivante.
 
 ---
 
-## 🔄 Évolution prévue
+## 🔐 Sécurité Proxmox : rôle, ACL et token API
 
-LabPilot commence comme un agent d'observation.
+Cette section documente les principes à respecter pour configurer l'accès de LabPilot à Proxmox.
 
-L'évolution recherchée est progressivement :
+Les libellés exacts de l'interface peuvent varier selon la version de Proxmox VE.
+
+### 1. Créer ou choisir un utilisateur dédié
+
+Dans l'interface Proxmox, ouvrir :
+
+**Datacenter → Permissions → Users**
+
+Utiliser de préférence un compte technique dédié à LabPilot, plutôt qu'un compte administrateur personnel.
+
+Exemple d'identifiant :
 
 ```text
-Observer
-  ↓
-Comprendre
-  ↓
-Raisonner
-  ↓
-Proposer
-  ↓
-Demander confirmation
-  ↓
-Agir
-  ↓
-Vérifier
-  ↓
-Rendre compte
+labpilot@pve
 ```
 
-L'objectif n'est donc pas simplement de créer un chatbot capable de répondre à des questions sur le Homelab, mais de construire progressivement un **véritable agent capable d'utiliser son environnement comme source d'information et comme ensemble d'outils**.
+Cet utilisateur ne doit disposer d'aucun privilège d'administration inutile.
+
+### 2. Comprendre le rôle
+
+Proxmox fournit notamment le rôle prédéfini `PVEAuditor`, destiné à l'audit et à la consultation.
+
+Ce rôle est adapté à un accès de supervision en lecture seule lorsque ses privilèges couvrent les opérations nécessaires à l'outil.
+
+Il ne faut pas lui ajouter de privilèges d'écriture simplement pour résoudre une erreur d'accès.
+
+Si une permission manque, identifier précisément l'API concernée et vérifier le périmètre de l'ACL avant toute modification.
+
+### 3. Comprendre les ACL
+
+Une ACL associe un utilisateur ou un token, un rôle et un chemin de ressources.
+
+Dans l'interface, ouvrir :
+
+**Datacenter → Permissions → Permissions**
+
+Les périmètres possibles comprennent notamment :
+
+- `/` : racine du cluster ;
+- `/nodes` : ressources associées aux nœuds ;
+- un chemin plus restreint, si les ressources et privilèges nécessaires le permettent.
+
+Le choix du chemin doit correspondre au besoin réel de LabPilot.
+
+Pour une supervision globale du cluster, les droits doivent couvrir les ressources nécessaires à la consultation des nœuds et des machines. Une ACL limitée à un seul nœud ne permet pas nécessairement de superviser tout le cluster.
+
+Ne pas créer plusieurs ACL plus larges que nécessaire pour contourner une erreur dont la cause n'a pas été identifiée.
+
+### 4. Créer un token API
+
+Dans l'interface Proxmox, ouvrir :
+
+**Datacenter → Permissions → API Tokens**
+
+Créer un token pour l'utilisateur technique.
+
+Exemple de nom :
+
+```text
+labpilot-readonly
+```
+
+L'identifiant complet prend généralement la forme :
+
+```text
+labpilot@pve!labpilot-readonly
+```
+
+Proxmox affiche le secret lors de la création du token. Il doit être copié immédiatement et stocké de manière sécurisée.
+
+Il ne faut pas compter sur la possibilité de retrouver ultérieurement le secret en clair dans l'interface.
+
+### 5. Comprendre la séparation des privilèges
+
+Lors de la création du token, Proxmox propose une option de séparation des privilèges (*Privilege Separation*).
+
+Son comportement est important :
+
+- lorsque la séparation est activée, les permissions effectives du token sont limitées par celles de son utilisateur et par les droits accordés au token ;
+- lorsque la séparation est désactivée, le token utilise les permissions de son utilisateur et il n'est pas possible de considérer le token comme une identité indépendante dotée de droits plus restreints.
+
+Pour un token de supervision, il faut documenter explicitement le mode retenu et vérifier les ACL correspondantes.
+
+**Ne pas supposer qu'un token est en lecture seule uniquement parce que son nom contient `readonly`.** Le nom ne constitue pas un contrôle de sécurité.
+
+### 6. Vérifier les permissions effectives
+
+Avant d'utiliser le token, vérifier :
+
+- l'utilisateur auquel il appartient ;
+- le rôle affecté ;
+- le chemin de l'ACL ;
+- le mode de séparation des privilèges ;
+- les permissions effectives de l'utilisateur et du token ;
+- l'absence de droits d'écriture inutiles.
+
+Le but est de permettre les requêtes de consultation nécessaires à LabPilot sans autoriser les modifications des machines, du stockage ou de la configuration du cluster.
+
+### 7. Stocker le secret localement
+
+Dans le fichier `.env` local :
+
+```dotenv
+PROXMOX_URL=https://<NOM_DNS_OU_IP_PROXMOX>:8006
+PROXMOX_TOKEN_ID=labpilot@pve!labpilot-readonly
+PROXMOX_TOKEN_SECRET=<SECRET_REEL_DU_TOKEN>
+```
+
+Le secret ne doit être partagé ni dans les messages de diagnostic ni dans les captures d'écran.
+
+Vérifier que `.env` est ignoré par Git :
+
+```bash
+git check-ignore .env
+```
+
+Si cette commande ne confirme pas que le fichier est ignoré, corriger `.gitignore` avant de poursuivre.
+
+Ne pas ajouter le fichier `.env` à l'index Git.
 
 ---
 
-## 📌 État actuel
+## 🔒 Certificat TLS de Proxmox
 
-LabPilot dispose maintenant de son premier socle fonctionnel et de son premier mécanisme d'utilisation d'outils.
+LabPilot vérifie le certificat HTTPS du serveur Proxmox au moyen d'un certificat CA local.
 
-Le projet sait actuellement :
-
-- charger sa configuration depuis un fichier `.env` ;
-- définir l'URL et le modèle Ollama utilisés ;
-- communiquer avec l'API `/api/chat` d'Ollama ;
-- encapsuler la communication avec le LLM dans un module dédié ;
-- maintenir un historique de conversation dans un objet `HistoriqueMessages` ;
-- transmettre cet historique au LLM à chaque nouvelle requête ;
-- conserver les réponses du LLM dans l'historique ;
-- déclarer des outils utilisables par le modèle ;
-- détecter lorsqu'Ollama demande l'utilisation d'un outil ;
-- récupérer les arguments transmis par le modèle ;
-- exécuter l'outil correspondant ;
-- transmettre le résultat de l'outil au LLM ;
-- générer une réponse finale à partir du résultat obtenu ;
-- gérer plusieurs appels d'outils dans une même réponse du modèle ;
-- enchaîner plusieurs séries d'appels d'outils jusqu'à obtenir une réponse finale ;
-- capturer les erreurs d'exécution des outils et les transmettre au modèle ;
-- conserver les appels d'outils et leurs résultats dans l'historique en mémoire ;
-- persister l'historique des conversations dans une base SQLite locale ;
-- recharger une conversation persistée depuis SQLite ;
-- éviter la duplication des messages lors de sauvegardes successives ;
-- présenter les résultats techniques de manière naturelle à l'utilisateur.
-
-Un premier ensemble d'outils permet actuellement de travailler avec l'heure courante, de calculer une heure future et d'obtenir l'état général du système.
-
-L'outil d'état du système fournit notamment :
-
-- le nom de la machine ;
-- le système d'exploitation ;
-- la version du noyau ;
-- l'architecture ;
-- le nombre de CPU ;
-- la mémoire totale et disponible ;
-- les charges moyennes du système sur 1, 5 et 15 minutes.
-
-Les charges moyennes correspondent au **load average Linux** et ne sont pas exprimées en pourcentage d'utilisation CPU.
-
-L'architecture actuelle est organisée autour de plusieurs responsabilités :
+Le fichier attendu par l'outil est :
 
 ```text
-TypeScript
-   │
-   ├── Orchestrateur
-   │       │
-   │       ├── HistoriqueMessages
-   │       │       │
-   │       │       └── DepotConversations
-   │       │               │
-   │       │               └── DepotConversationsSQLite
-   │       │
-   │       ├── OllamaClient
-   │       │
-   │       └── PontPython
-   │               │
-   │               ▼
-   │          processus Python
-   │               │
-   │               ▼
-   │          outils Python
-   │
-   ▼
-Ollama
+certs/proxmox-root-ca.pem
 ```
 
-La persistance des conversations est désormais organisée autour d'une interface de dépôt afin que l'orchestrateur ne dépende pas directement de SQLite.
+Le chemin est défini dans `labpilot/tools.py`.
 
-Cette séparation permettra notamment de faire évoluer ultérieurement le mécanisme de stockage sans modifier la logique de l'orchestrateur.
+Le certificat CA doit être obtenu depuis une source fiable, correspondant à l'autorité qui a signé le certificat du serveur Proxmox.
 
-La communication avec le modèle reste séparée de la logique de l'agent :
+### Pourquoi installer le certificat CA ?
+
+Une connexion HTTPS ne doit pas être considérée comme sûre simplement parce qu'elle utilise le port `8006`.
+
+La vérification TLS permet de vérifier la chaîne de confiance du certificat du serveur et de détecter notamment un certificat non reconnu ou une interception.
+
+Le client Python crée son contexte TLS à partir du fichier CA :
+
+```python
+ssl.create_default_context(
+    cafile=PROXMOX_CA_FILE
+)
+```
+
+Le certificat du serveur doit également correspondre au nom utilisé dans `PROXMOX_URL`.
+
+Si l'URL utilise un nom DNS, ce nom doit être présent dans les noms couverts par le certificat. Si l'URL utilise une adresse IP, le certificat doit être valide pour cette adresse IP.
+
+### Installer le certificat
+
+Depuis la racine du projet :
+
+```bash
+mkdir -p certs
+```
+
+Copier le certificat CA obtenu de manière fiable vers :
 
 ```text
-Orchestrateur
-   ↓
-OllamaClient
-   ↓
-API Ollama
-   ↓
-LLM local
+certs/proxmox-root-ca.pem
 ```
 
-La communication avec les outils reste également séparée :
+Le certificat public CA peut être versionné uniquement si cela est volontaire, sûr et adapté au projet. Pour l'installation actuelle, il reste local et est exclu du dépôt.
 
-```text
-Orchestrateur
-   ↓
-executerOutil()
-   ↓
-PontPython
-   ↓
-outil Python
-   ↓
-ToolResult
+Ne jamais remplacer la vérification TLS par un mode qui accepte tous les certificats.
+
+### Vérifier le fichier
+
+```bash
+test -f certs/proxmox-root-ca.pem \
+  && echo "Certificat CA présent" \
+  || echo "Certificat CA manquant"
 ```
 
-et la persistance des conversations :
-
-```text
-HistoriqueMessages
-   ↓
-DepotConversations
-   ↓
-DepotConversationsSQLite
-   ↓
-SQLite
-```
-
-Cette organisation permet à chaque composant d'avoir une responsabilité clairement définie.
-
-Cette étape valide le principe fondamental de LabPilot : le modèle peut décider d'utiliser un outil, l'agent peut l'exécuter, le résultat peut être réinjecté dans le raisonnement du modèle et l'historique de la conversation peut être conservé de manière persistante.
-
-Les tests montrent également que le modèle peut interpréter les résultats des outils et formuler une réponse contextualisée. Cette interprétation reste toutefois dépendante du raisonnement du modèle et peut être imparfaite.
-
-### Prochaine étape
-
-Le mécanisme d'outils gère désormais les appels successifs, les erreurs d'exécution, la protection contre les boucles incontrôlées et l'interprétation des résultats.
-
-L'historique des conversations peut désormais être persisté localement avec SQLite.
-
-La prochaine évolution consiste à poursuivre la consolidation de l'architecture TypeScript puis à intégrer progressivement de véritables outils de supervision du Homelab.
+Si le fichier est absent ou invalide, l'outil doit signaler une erreur plutôt que désactiver la validation du certificat.
 
 ---
 
-## 📄 Licence
+## 🚀 Lancement et utilisation
 
-La licence du projet sera définie ultérieurement.
-
----
-
-## 🤝 Contribution
-
-Les règles de contribution seront définies lorsque l'architecture initiale du projet sera stabilisée.
-
----
-
-## 💬 Conversations persistantes dans le terminal
-
-LabPilot dispose d'un service de gestion des conversations permettant de conserver l'historique des échanges et de reprendre une conversation ultérieurement.
-
-### Démarrer LabPilot
-
-Depuis la racine du projet, exécuter :
+Depuis la racine du dépôt, avec l'environnement Python activé :
 
 ```bash
 npm run chat
 ```
 
-Cette commande compile le projet TypeScript puis lance le terminal interactif. Une nouvelle conversation est créée au démarrage et son identifiant est affiché.
+Cette commande compile le projet TypeScript et lance le terminal interactif.
 
-### Commandes disponibles
+### Commandes du terminal
 
 | Commande | Description |
 |---|---|
 | `/help` | Afficher l'aide |
 | `/new` | Créer une nouvelle conversation |
-| `/resume <id>` | Reprendre une conversation existante |
+| `/resume <id>` | Reprendre une conversation |
 | `/quit` | Quitter le terminal |
 
-Tout texte qui n'est pas une commande est transmis à l'agent. LabPilot affiche ensuite sa réponse finale.
-
-### Persistance et reprise
-
-Les conversations sont enregistrées dans une base SQLite locale :
+Pour tester Proxmox, poser une question explicite, par exemple :
 
 ```text
-data/labpilot.db
+Donne-moi l'état des nœuds et des machines du cluster Proxmox.
 ```
 
-L'historique conserve les messages utilisateur, les réponses de l'assistant, les appels d'outils et leurs résultats.
+Pour vérifier les compteurs :
 
-Une conversation peut être reprise après la fermeture puis le redémarrage de LabPilot, à condition de disposer de son identifiant. Les nouvelles conversations possèdent un historique indépendant.
+```text
+Pour chaque type de machine, donne les nombres running,
+stopped et unknown directement depuis le compteur
+machines_par_type_et_etat fourni par l'outil.
+Vérifie la cohérence du total.
+```
 
-Le répertoire `data/` contient les données locales et ne doit pas être versionné dans Git.
+Les réponses du modèle doivent être contrôlées par rapport aux résultats structurés de l'outil.
 
-### Vérifications
+---
 
-Vérifier les types TypeScript :
+## 🧪 Tests et validation
+
+### Tests Python
+
+Activer l'environnement virtuel si nécessaire :
+
+```bash
+source .venv/bin/activate
+```
+
+Exécuter les tests :
+
+```bash
+python -m pytest -q
+```
+
+Vérifier la syntaxe Python :
+
+```bash
+python -m py_compile labpilot/tools.py
+```
+
+### Tests TypeScript
+
+Vérifier les types :
 
 ```bash
 npm run typecheck
 ```
 
-Compiler le projet :
+Compiler :
 
 ```bash
 npm run build
@@ -855,10 +607,248 @@ Exécuter les tests TypeScript :
 npm run test:ts
 ```
 
-Exécuter les tests d'intégration avec Ollama :
+### Vérifier les modifications Git
 
 ```bash
-npm run test:integration
+git diff --check
+git status --short
 ```
 
-Les tests d'intégration nécessitent un serveur Ollama accessible et un modèle compatible avec la configuration du projet.
+Ces commandes permettent de repérer les erreurs de formatage et de vérifier quels fichiers ont été modifiés.
+
+### Validation Proxmox
+
+La validation doit confirmer :
+
+- la résolution du nom du serveur ;
+- l'accessibilité HTTPS sur le port `8006` ;
+- la validité du certificat TLS ;
+- la présence des trois variables `PROXMOX_*` nécessaires ;
+- la présence du certificat CA ;
+- l'authentification du token ;
+- l'accès en lecture aux ressources attendues ;
+- le traitement des erreurs de connexion et de permission ;
+- la cohérence des compteurs retournés.
+
+Un test réalisé contre un cluster réel doit être complété par des tests unitaires avec des réponses simulées.
+
+---
+
+## 🛠️ Dépannage
+
+### Variables Proxmox manquantes
+
+Vérifier que `.env` contient les trois variables :
+
+```text
+PROXMOX_URL
+PROXMOX_TOKEN_ID
+PROXMOX_TOKEN_SECRET
+```
+
+Ne pas afficher la valeur du secret pour vérifier sa présence.
+
+### Certificat CA manquant
+
+Vérifier le fichier :
+
+```bash
+test -f certs/proxmox-root-ca.pem
+```
+
+Si le fichier manque, le restaurer depuis une source fiable.
+
+### Erreur TLS
+
+Vérifier :
+
+- que le certificat CA correspond à celui utilisé par Proxmox ;
+- que le certificat serveur n'est pas expiré ;
+- que le nom DNS ou l'adresse IP de l'URL correspond au certificat ;
+- que l'horloge du système est correcte.
+
+Ne pas désactiver la validation TLS pour contourner l'erreur.
+
+### Erreur d'authentification ou de permissions
+
+Vérifier :
+
+- l'identifiant complet du token ;
+- la valeur du secret dans le fichier local ;
+- le fait que le token existe et n'a pas été révoqué ;
+- l'utilisateur auquel le token appartient ;
+- le mode de séparation des privilèges ;
+- le rôle et le chemin de l'ACL ;
+- les permissions effectives sur les ressources interrogées.
+
+Ne pas résoudre une erreur de permission en attribuant automatiquement des droits d'administrateur.
+
+### Nœud hors ligne et état `unknown`
+
+Un nœud indisponible peut empêcher de déterminer l'état actuel de ses machines. `unknown` indique une information non disponible ou non déterminable ; cela ne signifie pas que la machine est arrêtée.
+
+### Erreur Ollama
+
+Vérifier que le service Ollama est actif, que l'URL est correcte et que le modèle demandé est disponible.
+
+---
+
+## 🔐 Sécurité générale
+
+Le dépôt doit pouvoir être rendu public sans nettoyage préalable.
+
+Ne jamais versionner :
+
+- les secrets et mots de passe ;
+- les tokens API ;
+- les clés privées ;
+- les fichiers `.env` locaux ;
+- les bases de conversations ;
+- les données personnelles ;
+- les configurations internes sensibles ;
+- les exports de diagnostic contenant des secrets.
+
+Les adresses, noms DNS et chemins spécifiques à une installation doivent être remplacés par des exemples dans la documentation publique.
+
+Les fichiers de configuration d'exemple ne doivent contenir que des valeurs fictives ou des placeholders.
+
+La sécurité doit reposer sur des contrôles effectifs :
+
+- permissions minimales ;
+- secrets hors du dépôt ;
+- validation TLS ;
+- traitement explicite des erreurs ;
+- journalisation sans secrets ;
+- confirmation humaine avant les futures actions sensibles.
+
+> Tout ce qui est commité dans LabPilot doit pouvoir être rendu public sans nettoyage préalable.
+
+---
+
+## 🗺️ Feuille de route
+
+### Phase 1 — Fondations
+
+- [x] Créer le dépôt GitHub.
+- [x] Définir le nom et le périmètre initial du projet.
+- [x] Définir les principes de sécurité.
+- [x] Créer la structure initiale.
+- [x] Mettre en place la configuration.
+- [x] Communiquer avec le modèle IA local.
+- [x] Séparer l'agent de la communication avec Ollama.
+- [x] Mettre en place un historique de conversation.
+
+### Phase 2 — Premier agent en lecture seule
+
+- [x] Mettre en place la boucle de fonctionnement de l'agent.
+- [x] Déclarer les outils et transmettre leurs arguments.
+- [x] Exécuter les outils et renvoyer leurs résultats au modèle.
+- [x] Générer une réponse finale à partir du résultat d'un outil.
+- [x] Tester le choix automatique des outils.
+- [x] Utiliser l'historique des conversations avec les outils.
+- [x] Créer l'outil d'état du système.
+- [x] Créer l'outil d'état du GPU.
+- [x] Créer l'outil d'état d'Ollama.
+- [x] Tester le raisonnement à partir des résultats.
+- [x] Gérer plusieurs appels d'outils successifs.
+- [x] Gérer les erreurs d'exécution.
+- [x] Limiter les boucles d'appels d'outils.
+
+### Phase 3 — Intégration du Homelab
+
+- [x] Intégrer Home Assistant en lecture seule.
+- [x] Récupérer les informations de version de Home Assistant.
+- [x] Compter les entités et les répartir par domaine.
+- [x] Ajouter l'outil Proxmox en lecture seule.
+- [x] Calculer les compteurs de machines par type et par état.
+- [x] Déclarer l'outil Proxmox dans le catalogue TypeScript.
+- [ ] Finaliser et valider la documentation Proxmox.
+- [ ] Ajouter des tests explicites pour les erreurs Proxmox : connexion, authentification, permissions et réponses invalides.
+- [ ] Ajouter des outils réseau.
+- [ ] Ajouter des outils de stockage.
+- [ ] Ajouter des outils de supervision.
+- [ ] Améliorer les rapports d'état.
+
+### Phase 4 — Automatisation contrôlée
+
+- [ ] Définir les actions autorisées.
+- [ ] Mettre en place les demandes de confirmation.
+- [ ] Journaliser les actions sans exposer de secrets.
+- [ ] Définir les permissions par action.
+- [ ] Tester les erreurs et les situations de récupération.
+- [ ] Empêcher les actions dangereuses non confirmées.
+
+### Phase 5 — Architecture de production
+
+- [ ] Séparer LabPilot du serveur de modèle IA.
+- [ ] Déployer LabPilot comme service indépendant.
+- [ ] Conteneuriser l'application.
+- [ ] Étudier un déploiement K3s.
+- [ ] Améliorer la supervision.
+- [ ] Renforcer la sécurité.
+
+---
+
+## 📁 Structure du projet
+
+La structure évolue avec les fonctionnalités. Les principaux composants comprennent :
+
+```text
+LabPilot/
+├── src/
+│   ├── index.ts
+│   ├── labpilot.ts
+│   ├── types.ts
+│   ├── orchestrateur.ts
+│   ├── ollama-client.ts
+│   ├── pont-python.ts
+│   ├── historique.ts
+│   ├── depot-conversations.ts
+│   └── depot-conversations-sqlite.ts
+├── labpilot/
+│   ├── configuration.py
+│   ├── tools.py
+│   └── bridge.py
+├── tests/
+├── tests-ts/
+├── certs/
+│   └── proxmox-root-ca.pem
+├── data/
+│   └── labpilot.db
+├── .env.example
+├── requirements.txt
+├── package.json
+├── package-lock.json
+└── README.md
+```
+
+Cette représentation est indicative : certains fichiers peuvent évoluer ou être ajoutés au cours du développement.
+
+Les répertoires `data/`, `.venv/`, `node_modules/`, les fichiers `.env` locaux et les certificats propres à l'installation doivent rester hors du dépôt lorsque leur contenu est spécifique à l'environnement.
+
+---
+
+## 📄 Licence et contribution
+
+La licence et les règles de contribution seront définies lorsque l'architecture initiale du projet sera stabilisée.
+
+---
+
+## 📌 État actuel du projet
+
+LabPilot possède un premier socle fonctionnel comprenant :
+
+- une orchestration TypeScript ;
+- une communication avec Ollama ;
+- un pont Python persistant ;
+- un catalogue d'outils ;
+- une boucle d'appels d'outils avec limite d'itérations ;
+- un historique de conversation persistant avec SQLite ;
+- des outils de supervision du système, du GPU et d'Ollama ;
+- une intégration Home Assistant en lecture seule ;
+- une intégration Proxmox en lecture seule ;
+- des tests unitaires Python et TypeScript.
+
+L'interprétation du modèle peut rester imparfaite. Les informations techniques doivent être vérifiées à partir des résultats structurés des outils.
+
+La prochaine étape consiste à finaliser la documentation et à consolider les tests de l'intégration Proxmox, avant de poursuivre les autres outils de supervision du Homelab.

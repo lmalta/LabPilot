@@ -2,6 +2,7 @@ import json
 from unittest.mock import patch
 from labpilot.agent import Agent, MAX_CYCLES_OUTILS, executer_outil
 from labpilot.tools import etat_gpu, etat_ollama, etat_home_assistant
+from labpilot.tools import etat_proxmox, DEFINITIONS_OUTILS
 
 
 def test_creation_agent():
@@ -279,3 +280,171 @@ def test_etat_home_assistant_configuration_absente():
 
     assert resultat["erreur"] == "RuntimeError"
     urlopen.assert_not_called()
+
+def test_etat_proxmox():
+    ressources = [
+        {
+            "type": "node",
+            "node": "maltas",
+            "status": "online",
+            "cpu": 0.25,
+            "mem": 2 * 1024**3,
+            "maxmem": 8 * 1024**3,
+        },
+        {
+            "type": "node",
+            "node": "Malta-D",
+            "status": "offline",
+        },
+        {
+            "type": "qemu",
+            "id": "qemu/300",
+            "vmid": 300,
+            "name": "haos18-2",
+            "node": "maltas",
+            "status": "running",
+            "tags": "test;linux",
+            "cpu": 0.10,
+            "mem": 1024**3,
+            "maxmem": 2 * 1024**3,
+        },
+        {
+            "type": "lxc",
+            "id": "lxc/200",
+            "vmid": 200,
+            "name": "conteneur-test",
+            "node": "Malta-D",
+            "status": "stopped",
+            "tags": None,
+        },
+    ]
+
+    class Reponse:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            pass
+
+        def read(self):
+            return json.dumps({"data": ressources}).encode()
+
+    with (
+        patch("labpilot.tools.PROXMOX_URL", "https://proxmox-test:8006"),
+        patch("labpilot.tools.PROXMOX_TOKEN_ID", "test@pve!readonly"),
+        patch("labpilot.tools.PROXMOX_TOKEN_SECRET", "secret-fictif"),
+        patch("labpilot.tools.os.path.isfile", return_value=True),
+        patch(
+            "labpilot.tools.ssl.create_default_context"
+        ) as create_context,
+        patch(
+            "labpilot.tools.urllib.request.urlopen",
+            return_value=Reponse(),
+        ) as urlopen,
+    ):
+        resultat = etat_proxmox()
+
+    create_context.assert_called_once_with(
+        cafile=etat_proxmox.__globals__["PROXMOX_CA_FILE"]
+    )
+
+    requete = urlopen.call_args.args[0]
+    assert requete.full_url == (
+        "https://proxmox-test:8006/api2/json/cluster/resources"
+    )
+    assert requete.get_header("Authorization") == (
+        "PVEAPIToken=test@pve!readonly=secret-fictif"
+    )
+    assert requete.get_header("Accept") == "application/json"
+    assert urlopen.call_args.kwargs["timeout"] == 10
+    assert urlopen.call_args.kwargs["context"] is create_context.return_value
+
+    assert resultat["disponible"] is True
+    assert resultat["nombre_noeuds"] == 2
+    assert resultat["nombre_machines"] == 2
+    assert resultat["machines_par_type"] == {
+        "VM": 1,
+        "conteneur": 1,
+    }
+    assert resultat["machines_par_etat"] == {
+        "running": 1,
+        "stopped": 1,
+    }
+    assert resultat["machines_par_type_et_etat"] == {
+        "VM": {
+            "running": 1,
+            "stopped": 0,
+            "unknown": 0,
+        },
+        "conteneur": {
+            "running": 0,
+            "stopped": 1,
+            "unknown": 0,
+        },
+    }
+
+    maltas = next(n for n in resultat["noeuds"] if n["nom"] == "maltas")
+    assert maltas["etat"] == "online"
+    assert maltas["cpu_pourcent"] == 25.0
+    assert maltas["memoire_utilisee_mo"] == 2048
+    assert maltas["memoire_totale_mo"] == 8192
+
+    malta_d = next(n for n in resultat["noeuds"] if n["nom"] == "Malta-D")
+    assert malta_d["etat"] == "offline"
+    assert malta_d["cpu_pourcent"] is None
+
+    vm = next(m for m in resultat["machines"] if m["id"] == 300)
+    assert vm["type"] == "VM"
+    assert vm["nom"] == "haos18-2"
+    assert vm["memoire_utilisee_mo"] == 1024
+    assert vm["identifiant"] == "qemu/300"
+    assert vm["tags"] == "test;linux"
+
+    conteneur = next(m for m in resultat["machines"] if m["id"] == 200)
+    assert conteneur["type"] == "conteneur"
+    assert conteneur["etat"] == "stopped"
+    assert conteneur["identifiant"] == "lxc/200"
+    assert conteneur["tags"] is None
+
+    urlopen.assert_called_once()
+
+
+def test_etat_proxmox_configuration_absente():
+    with (
+        patch("labpilot.tools.PROXMOX_URL", None),
+        patch("labpilot.tools.PROXMOX_TOKEN_ID", None),
+        patch("labpilot.tools.PROXMOX_TOKEN_SECRET", None),
+        patch("labpilot.tools.urllib.request.urlopen") as urlopen,
+    ):
+        resultat = executer_outil({
+            "function": {
+                "name": "etat_proxmox",
+                "arguments": {},
+            }
+        })
+
+    assert resultat["erreur"] == "RuntimeError"
+    urlopen.assert_not_called()
+
+
+def test_etat_proxmox_erreur_api():
+    with (
+        patch("labpilot.tools.PROXMOX_URL", "https://proxmox-test:8006"),
+        patch("labpilot.tools.PROXMOX_TOKEN_ID", "test@pve!readonly"),
+        patch("labpilot.tools.PROXMOX_TOKEN_SECRET", "secret-fictif"),
+        patch("labpilot.tools.os.path.isfile", return_value=True),
+        patch("labpilot.tools.ssl.create_default_context"),
+        patch(
+            "labpilot.tools.urllib.request.urlopen",
+            side_effect=ConnectionError("secret-fictif"),
+        ),
+    ):
+        resultat = executer_outil({
+            "function": {
+                "name": "etat_proxmox",
+                "arguments": {},
+            }
+        })
+
+    assert resultat["erreur"] == "RuntimeError"
+    assert "secret-fictif" not in resultat["message"]

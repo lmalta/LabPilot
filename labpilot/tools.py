@@ -2,9 +2,22 @@ import os
 import platform
 import subprocess
 import json
+import ssl
 import urllib.request
 from datetime import datetime, timedelta
-from labpilot.configuration import HOME_ASSISTANT_URL, HOME_ASSISTANT_TOKEN
+from labpilot.configuration import (
+    HOME_ASSISTANT_URL,
+    HOME_ASSISTANT_TOKEN,
+    PROXMOX_URL,
+    PROXMOX_TOKEN_ID,
+    PROXMOX_TOKEN_SECRET,
+)
+
+PROXMOX_CA_FILE = os.path.join(
+    os.path.dirname(os.path.dirname(__file__)),
+    "certs",
+    "proxmox-root-ca.pem",
+)
 
 
 def heure_actuelle() -> str:
@@ -104,6 +117,7 @@ def etat_ollama() -> dict:
         ],
     }
 
+
 def etat_home_assistant() -> dict:
     if not HOME_ASSISTANT_URL or not HOME_ASSISTANT_TOKEN:
         raise RuntimeError(
@@ -147,6 +161,133 @@ def etat_home_assistant() -> dict:
         "entites_par_domaine": dict(sorted(domaines.items())),
     }
 
+
+def etat_proxmox() -> dict:
+    """Retourne l'état des nœuds et des VM/conteneurs Proxmox en lecture seule."""
+    if not all((PROXMOX_URL, PROXMOX_TOKEN_ID, PROXMOX_TOKEN_SECRET)):
+        raise RuntimeError("La configuration Proxmox est absente.")
+
+    if not os.path.isfile(PROXMOX_CA_FILE):
+        raise RuntimeError("Le certificat CA Proxmox est introuvable.")
+
+    contexte_tls = ssl.create_default_context(cafile=PROXMOX_CA_FILE)
+    base_url = PROXMOX_URL.rstrip("/")
+    requete = urllib.request.Request(
+        f"{base_url}/api2/json/cluster/resources",
+        headers={
+            "Authorization": (
+                f"PVEAPIToken={PROXMOX_TOKEN_ID}={PROXMOX_TOKEN_SECRET}"
+            ),
+            "Accept": "application/json",
+        },
+    )
+
+    try:
+        with urllib.request.urlopen(
+            requete, timeout=10, context=contexte_tls
+        ) as reponse:
+            ressources = json.load(reponse)["data"]
+    except Exception as erreur:
+        # Ne pas exposer les détails HTTP ou les informations d'authentification.
+        raise RuntimeError(
+            f"Impossible de consulter Proxmox ({type(erreur).__name__})."
+        ) from None
+
+    noeuds = []
+    machines = []
+
+    for ressource in ressources:
+        type_ressource = ressource.get("type")
+
+        if type_ressource == "node":
+            noeuds.append({
+                "nom": ressource.get("node"),
+                "etat": ressource.get("status", "inconnu"),
+                "cpu_pourcent": (
+                    round(ressource["cpu"] * 100, 1)
+                    if ressource.get("cpu") is not None else None
+                ),
+                "memoire_utilisee_mo": (
+                    round(ressource["mem"] / 1024**2)
+                    if ressource.get("mem") is not None else None
+                ),
+                "memoire_totale_mo": (
+                    round(ressource["maxmem"] / 1024**2)
+                    if ressource.get("maxmem") is not None else None
+                ),
+            })
+
+        elif type_ressource in ("qemu", "lxc"):
+            machines.append({
+                "type": "VM" if type_ressource == "qemu" else "conteneur",
+                "id": ressource.get("vmid"),
+                "identifiant": ressource.get("id"),
+                "tags": ressource.get("tags"),
+                "nom": ressource.get("name"),
+                "noeud": ressource.get("node"),
+                "etat": ressource.get("status", "inconnu"),
+                "cpu_pourcent": (
+                    round(ressource["cpu"] * 100, 1)
+                    if ressource.get("cpu") is not None else None
+                ),
+                "memoire_utilisee_mo": (
+                    round(ressource["mem"] / 1024**2)
+                    if ressource.get("mem") is not None else None
+                ),
+                "memoire_totale_mo": (
+                    round(ressource["maxmem"] / 1024**2)
+                    if ressource.get("maxmem") is not None else None
+                ),
+            })
+
+    machines_par_type = {}
+    machines_par_etat = {}
+    machines_par_type_et_etat = {}
+
+    for machine in machines:
+        type_machine = machine["type"]
+        etat_machine = machine["etat"]
+
+        machines_par_type[type_machine] = (
+            machines_par_type.get(type_machine, 0) + 1
+        )
+        machines_par_etat[etat_machine] = (
+            machines_par_etat.get(etat_machine, 0) + 1
+        )
+
+        if type_machine not in machines_par_type_et_etat:
+            machines_par_type_et_etat[type_machine] = {}
+
+        machines_par_type_et_etat[type_machine][etat_machine] = (
+            machines_par_type_et_etat[type_machine].get(etat_machine, 0) + 1
+        )
+
+    for type_machine in machines_par_type:
+        for etat in ("running", "stopped", "unknown"):
+            machines_par_type_et_etat.setdefault(
+                type_machine, {}
+            ).setdefault(etat, 0)
+
+    return {
+        "disponible": True,
+        "nombre_noeuds": len(noeuds),
+        "noeuds": sorted(noeuds, key=lambda n: n["nom"] or ""),
+        "nombre_machines": len(machines),
+        "machines_par_type": dict(sorted(machines_par_type.items())),
+        "machines_par_etat": dict(sorted(machines_par_etat.items())),
+        "machines_par_type_et_etat": {
+            type_machine: dict(sorted(etats.items()))
+            for type_machine, etats in sorted(
+                machines_par_type_et_etat.items()
+            )
+        },
+        "machines": sorted(
+            machines,
+            key=lambda m: (m["noeud"] or "", m["id"] or 0),
+        ),
+    }
+
+
 OUTILS = {
     "heure_actuelle": heure_actuelle,
     "heure_dans": heure_dans,
@@ -154,6 +295,7 @@ OUTILS = {
     "etat_gpu": etat_gpu,
     "etat_ollama": etat_ollama,
     "etat_home_assistant": etat_home_assistant,
+    "etat_proxmox": etat_proxmox,
 }
 
 DEFINITIONS_OUTILS = [
@@ -229,6 +371,30 @@ DEFINITIONS_OUTILS = [
             "description": (
                 "Retourne la version de Home Assistant, le nombre d'entités "
                 "et leur répartition par domaine. Cet outil est en lecture seule."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {},
+                "required": [],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "etat_proxmox",
+            "description": (
+                "Consulte en lecture seule le cluster Proxmox. "
+                "Les champs type, id, nom, noeud et etat proviennent "
+                "des données de l'API. Le type vaut VM ou conteneur "
+                "et ne doit jamais être déduit de l'état. Les états "
+                "possibles comprennent running, stopped et unknown. "
+                "Un état unknown n'est pas un état stopped. "
+                "Si le nom vaut null, il est inconnu et ne doit pas "
+                "être inventé. Pour les totaux, compte les entrées "
+                "de machines et classe-les selon leur type et leur "
+                "état. Ne déduis pas de machines supplémentaires "
+                "à partir des tags ou des identifiants."
             ),
             "parameters": {
                 "type": "object",
