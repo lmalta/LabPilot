@@ -90,4 +90,17 @@ export const definitionsOutils: ToolDefinition[] = [
       },
     },
   },
+  {
+    type: "function",
+    function: {
+      name: "etat_home_assistant",
+      description:
+        "Retourne la version de Home Assistant, le nombre d'entités et leur répartition par domaine. Cet outil est en lecture seule.",
+      parameters: {
+        type: "object",
+        properties: {},
+        required: [],
+      },
+    },
+  },
 ];

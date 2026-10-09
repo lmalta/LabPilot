@@ -1,7 +1,7 @@
 import json
 from unittest.mock import patch
 from labpilot.agent import Agent, MAX_CYCLES_OUTILS, executer_outil
-from labpilot.tools import etat_gpu, etat_ollama
+from labpilot.tools import etat_gpu, etat_ollama, etat_home_assistant
 
 
 def test_creation_agent():
@@ -192,3 +192,90 @@ def test_etat_ollama():
             "qwen3:8b",
         ],
     }
+
+
+def test_etat_home_assistant():
+    reponses = [
+        {"version": "2026.9.2"},
+        [
+            {"entity_id": "sensor.temperature"},
+            {"entity_id": "sensor.humidite"},
+            {"entity_id": "light.salon"},
+        ],
+    ]
+
+    def reponse_http(*args, **kwargs):
+        resultat = reponses.pop(0)
+
+        class Reponse:
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *args):
+                pass
+
+            def read(self):
+                return json.dumps(resultat).encode()
+
+        return Reponse()
+
+    with patch(
+        "labpilot.tools.urllib.request.urlopen",
+        side_effect=reponse_http,
+    ) as urlopen:
+        resultat = etat_home_assistant()
+
+    assert resultat == {
+        "disponible": True,
+        "version": "2026.9.2",
+        "nombre_entites": 3,
+        "entites_par_domaine": {
+            "light": 1,
+            "sensor": 2,
+        },
+    }
+
+    assert urlopen.call_count == 2
+
+
+def test_etat_home_assistant_erreur_http():
+    jeton_fictif = "JETON_SECRET_TEST"
+
+    with (
+        patch("labpilot.tools.HOME_ASSISTANT_URL", "http://home-assistant"),
+        patch("labpilot.tools.HOME_ASSISTANT_TOKEN", jeton_fictif),
+        patch(
+            "labpilot.tools.urllib.request.urlopen",
+            side_effect=ConnectionError(jeton_fictif),
+        ),
+    ):
+        resultat = executer_outil(
+            {
+                "function": {
+                    "name": "etat_home_assistant",
+                    "arguments": {},
+                }
+            }
+        )
+
+    assert resultat["erreur"] == "RuntimeError"
+    assert jeton_fictif not in resultat["message"]
+
+
+def test_etat_home_assistant_configuration_absente():
+    with (
+        patch("labpilot.tools.HOME_ASSISTANT_URL", None),
+        patch("labpilot.tools.HOME_ASSISTANT_TOKEN", None),
+        patch("labpilot.tools.urllib.request.urlopen") as urlopen,
+    ):
+        resultat = executer_outil(
+            {
+                "function": {
+                    "name": "etat_home_assistant",
+                    "arguments": {},
+                }
+            }
+        )
+
+    assert resultat["erreur"] == "RuntimeError"
+    urlopen.assert_not_called()
