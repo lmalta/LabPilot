@@ -7,10 +7,12 @@
     "test": "tests"
   },
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1",
+    "test": "npm run test:ts",
     "build": "tsc",
     "typecheck": "tsc --noEmit",
-    "test:ts": "npm run build && node --test dist/tests-ts/outils.test.js"
+    "test:ts": "npm run build && node --test dist/tests-ts/depot-conversations-sqlite.test.js dist/tests-ts/historique-persistence.test.js dist/tests-ts/historique-sqlite.test.js dist/tests-ts/historique.test.js dist/tests-ts/outils.test.js dist/tests-ts/service-conversations.test.js",
+    "chat": "npm run build && node dist/src/index.js",
+    "test:integration": "npm run build && node --test dist/tests-ts/ollama.test.js"
   },
   "repository": {
     "type": "git",

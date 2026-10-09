@@ -785,3 +785,72 @@ La licence du projet sera définie ultérieurement.
 ## 🤝 Contribution
 
 Les règles de contribution seront définies lorsque l'architecture initiale du projet sera stabilisée.
+
+---
+
+## 💬 Conversations persistantes dans le terminal
+
+LabPilot dispose d'un service de gestion des conversations permettant de conserver l'historique des échanges et de reprendre une conversation ultérieurement.
+
+### Démarrer LabPilot
+
+Depuis la racine du projet, exécuter :
+
+```bash
+npm run chat
+```
+
+Cette commande compile le projet TypeScript puis lance le terminal interactif. Une nouvelle conversation est créée au démarrage et son identifiant est affiché.
+
+### Commandes disponibles
+
+| Commande | Description |
+|---|---|
+| `/help` | Afficher l'aide |
+| `/new` | Créer une nouvelle conversation |
+| `/resume <id>` | Reprendre une conversation existante |
+| `/quit` | Quitter le terminal |
+
+Tout texte qui n'est pas une commande est transmis à l'agent. LabPilot affiche ensuite sa réponse finale.
+
+### Persistance et reprise
+
+Les conversations sont enregistrées dans une base SQLite locale :
+
+```text
+data/labpilot.db
+```
+
+L'historique conserve les messages utilisateur, les réponses de l'assistant, les appels d'outils et leurs résultats.
+
+Une conversation peut être reprise après la fermeture puis le redémarrage de LabPilot, à condition de disposer de son identifiant. Les nouvelles conversations possèdent un historique indépendant.
+
+Le répertoire `data/` contient les données locales et ne doit pas être versionné dans Git.
+
+### Vérifications
+
+Vérifier les types TypeScript :
+
+```bash
+npm run typecheck
+```
+
+Compiler le projet :
+
+```bash
+npm run build
+```
+
+Exécuter les tests TypeScript :
+
+```bash
+npm run test:ts
+```
+
+Exécuter les tests d'intégration avec Ollama :
+
+```bash
+npm run test:integration
+```
+
+Les tests d'intégration nécessitent un serveur Ollama accessible et un modèle compatible avec la configuration du projet.

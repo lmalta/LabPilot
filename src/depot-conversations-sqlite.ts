@@ -42,6 +42,16 @@ export class DepotConversationsSQLite
         idx_messages_conversation_ordre
       ON messages(conversation_id, ordre);
     `);
+
+    const colonnes = this.base
+      .prepare("PRAGMA table_info(messages)")
+      .all() as Array<{ name: string }>;
+
+    if (!colonnes.some((colonne) => colonne.name === "appels_outils")) {
+      this.base.exec(
+        "ALTER TABLE messages ADD COLUMN appels_outils TEXT",
+      );
+    }
   }
 
   public creerConversation(): Conversation {
@@ -79,14 +89,16 @@ export class DepotConversationsSQLite
         ordre,
         role,
         contenu,
-        nom_outil
+        nom_outil,
+        appels_outils
       )
       SELECT
         @conversationId,
         COALESCE(MAX(ordre), -1) + 1,
         @role,
         @contenu,
-        @nomOutil
+        @nomOutil,
+        @appelsOutils
       FROM messages
       WHERE conversation_id = @conversationId
     `);
@@ -98,6 +110,11 @@ export class DepotConversationsSQLite
       nomOutil:
         message.role === "tool"
           ? message.tool_name
+          : null,
+      appelsOutils:
+        message.role === "assistant" &&
+        message.tool_calls !== undefined
+          ? JSON.stringify(message.tool_calls)
           : null,
     });
   }
@@ -127,7 +144,8 @@ export class DepotConversationsSQLite
       SELECT
         role,
         contenu,
-        nom_outil
+        nom_outil,
+        appels_outils
       FROM messages
       WHERE conversation_id = ?
       ORDER BY ordre ASC
@@ -139,6 +157,7 @@ export class DepotConversationsSQLite
       role: Message["role"];
       contenu: string;
       nom_outil: string | null;
+      appels_outils: string | null;
     }>;
 
     return lignes.map((ligne) => {
@@ -151,10 +170,19 @@ export class DepotConversationsSQLite
       }
 
       if (ligne.role === "assistant") {
-        return {
+        const message: Message = {
           role: "assistant",
           content: ligne.contenu,
         };
+
+        if (ligne.appels_outils !== null) {
+          return {
+            ...message,
+            tool_calls: JSON.parse(ligne.appels_outils),
+          };
+        }
+
+        return message;
       }
 
       if (ligne.role === "system") {
