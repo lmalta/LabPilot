@@ -13,6 +13,7 @@ const outilsAttendus = [
   "etat_systeme",
   "etat_gpu",
   "etat_ollama",
+  "etat_home_assistant",
 ];
 
 test("l'outil heure_actuelle est correctement défini", () => {
@@ -67,7 +68,18 @@ test("l'outil etat_ollama est correctement défini", () => {
   assert.equal(outil.function.parameters.type, "object");
 });
 
-test("le catalogue contient exactement les cinq outils attendus", () => {
+test("l'outil etat_home_assistant est correctement défini", () => {
+  const outil = definitionsOutils.find(
+    (outil) => outil.function.name === "etat_home_assistant",
+  );
+
+  assert.ok(outil);
+  assert.equal(outil.type, "function");
+  assert.equal(outil.function.parameters.type, "object");
+  assert.deepEqual(outil.function.parameters.required, []);
+});
+
+test("le catalogue contient exactement les six outils attendus", () => {
   assert.deepEqual(
     definitionsOutils.map((outil) => outil.function.name),
     outilsAttendus,

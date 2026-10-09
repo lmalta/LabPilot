@@ -4,6 +4,7 @@ import subprocess
 import json
 import urllib.request
 from datetime import datetime, timedelta
+from labpilot.configuration import HOME_ASSISTANT_URL, HOME_ASSISTANT_TOKEN
 
 
 def heure_actuelle() -> str:
@@ -103,6 +104,48 @@ def etat_ollama() -> dict:
         ],
     }
 
+def etat_home_assistant() -> dict:
+    if not HOME_ASSISTANT_URL or not HOME_ASSISTANT_TOKEN:
+        raise RuntimeError(
+            "La configuration Home Assistant est absente."
+        )
+
+    base_url = HOME_ASSISTANT_URL.rstrip("/")
+
+    def requete_api(chemin: str):
+        requete = urllib.request.Request(
+            f"{base_url}{chemin}",
+            headers={
+                "Authorization": f"Bearer {HOME_ASSISTANT_TOKEN}",
+                "Content-Type": "application/json",
+            },
+        )
+
+        with urllib.request.urlopen(requete, timeout=10) as reponse:
+            return json.load(reponse)
+
+    try:
+        configuration = requete_api("/api/config")
+        entites = requete_api("/api/states")
+    except Exception as erreur:
+        # Ne pas propager les détails HTTP susceptibles de contenir
+        # des informations sensibles.
+        raise RuntimeError(
+            f"Impossible de consulter Home Assistant ({type(erreur).__name__})."
+        ) from None
+
+    domaines = {}
+
+    for entite in entites:
+        domaine = entite.get("entity_id", "inconnu").split(".", 1)[0]
+        domaines[domaine] = domaines.get(domaine, 0) + 1
+
+    return {
+        "disponible": True,
+        "version": configuration.get("version"),
+        "nombre_entites": len(entites),
+        "entites_par_domaine": dict(sorted(domaines.items())),
+    }
 
 OUTILS = {
     "heure_actuelle": heure_actuelle,
@@ -110,6 +153,7 @@ OUTILS = {
     "etat_systeme": etat_systeme,
     "etat_gpu": etat_gpu,
     "etat_ollama": etat_ollama,
+    "etat_home_assistant": etat_home_assistant,
 }
 
 DEFINITIONS_OUTILS = [
@@ -171,6 +215,21 @@ DEFINITIONS_OUTILS = [
         "function": {
             "name": "etat_ollama",
             "description": "Retourne l état du serveur Ollama, les modèles disponibles et les modèles actuellement actifs.",
+            "parameters": {
+                "type": "object",
+                "properties": {},
+                "required": [],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "etat_home_assistant",
+            "description": (
+                "Retourne la version de Home Assistant, le nombre d'entités "
+                "et leur répartition par domaine. Cet outil est en lecture seule."
+            ),
             "parameters": {
                 "type": "object",
                 "properties": {},
