@@ -3,6 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 import assert from "node:assert/strict";
+import Database from "better-sqlite3";
 
 import { DepotConversationsSQLite } from "../src/depot-conversations-sqlite.js";
 
@@ -211,6 +212,14 @@ test("les différents types de messages sont conservés dans l ordre", () => {
       {
         role: "assistant",
         content: "",
+        tool_calls: [
+          {
+            function: {
+              name: "etat_systeme",
+              arguments: {},
+            },
+          },
+        ],
       },
       {
         role: "tool",
@@ -292,4 +301,76 @@ test("les conversations persistent après fermeture et réouverture de SQLite", 
     recursive: true,
     force: true,
   });
+});
+
+test("une ancienne base SQLite est migrée sans perdre son historique", () => {
+  const dossier = mkdtempSync(join(tmpdir(), "labpilot-migration-"));
+  const chemin = join(dossier, "labpilot.db");
+
+  const ancienneBase = new Database(chemin);
+
+  ancienneBase.exec(`
+    CREATE TABLE conversations (
+      id TEXT PRIMARY KEY,
+      cree_le TEXT NOT NULL
+    );
+
+    CREATE TABLE messages (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      conversation_id TEXT NOT NULL,
+      ordre INTEGER NOT NULL,
+      role TEXT NOT NULL,
+      contenu TEXT NOT NULL,
+      nom_outil TEXT,
+      FOREIGN KEY (conversation_id)
+        REFERENCES conversations(id)
+        ON DELETE CASCADE
+    );
+
+    CREATE INDEX idx_messages_conversation_ordre
+      ON messages(conversation_id, ordre);
+
+    INSERT INTO conversations (id, cree_le)
+    VALUES ('ancienne-conversation', '2026-01-01T00:00:00.000Z');
+
+    INSERT INTO messages (conversation_id, ordre, role, contenu)
+    VALUES ('ancienne-conversation', 0, 'user', 'Historique existant');
+  `);
+
+  ancienneBase.close();
+
+  const depot = new DepotConversationsSQLite(chemin);
+
+  assert.deepEqual(
+    depot.obtenirMessages("ancienne-conversation"),
+    [{ role: "user", content: "Historique existant" }],
+  );
+
+  depot.ajouterMessage("ancienne-conversation", {
+    role: "assistant",
+    content: "",
+    tool_calls: [{
+      function: {
+        name: "etat_systeme",
+        arguments: {},
+      },
+    }],
+  });
+
+  const messages = depot.obtenirMessages("ancienne-conversation");
+
+  assert.equal(messages.length, 2);
+  assert.deepEqual(messages[1], {
+    role: "assistant",
+    content: "",
+    tool_calls: [{
+      function: {
+        name: "etat_systeme",
+        arguments: {},
+      },
+    }],
+  });
+
+  depot.fermer();
+  rmSync(dossier, { recursive: true, force: true });
 });
