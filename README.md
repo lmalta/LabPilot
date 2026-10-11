@@ -867,7 +867,7 @@ La licence et les règles de contribution seront définies lorsque l'architectur
 
 ---
 
-## 🌦️ Veille météo, CVE et pentest
+## 🌦️ Veille, météo, CVE et pentest
 
 Les flux RSS, la veille météo, la collecte de CVE et le pentest automatisé sont des objectifs futurs de la feuille de route. Ils ne sont pas présentés comme des fonctionnalités déjà implémentées. La démarche de sécurité commencera par l’inventaire, la veille et les contrôles non destructifs, avant d’envisager des tests intrusifs limités aux systèmes autorisés.
 
