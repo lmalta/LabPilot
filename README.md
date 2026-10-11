@@ -22,6 +22,7 @@
 - [Dépannage](#-dépannage)
 - [Sécurité générale](#-sécurité-générale)
 - [Feuille de route](#-feuille-de-route)
+- [Veille, météo, CVE et pentest](#-veille-météo-cve-et-pentest)
 - [Structure du projet](#-structure-du-projet)
 
 ---
@@ -789,6 +790,38 @@ La sécurité doit reposer sur des contrôles effectifs :
 
 ---
 
+### Phase 6 — Veille et informations externes
+
+- [ ] Définir une architecture modulaire de collecte des informations.
+- [ ] Intégrer des flux RSS d’actualités.
+- [ ] Intégrer une source météo adaptée.
+- [ ] Collecter les alertes et actualités météorologiques pertinentes.
+- [ ] Filtrer, dédupliquer et classer les informations.
+- [ ] Produire des synthèses à partir des informations collectées.
+- [ ] Permettre la sélection des sources et des sujets suivis.
+
+### Phase 7 — Veille de sécurité du Homelab
+
+- [ ] Inventorier les composants du Homelab et leurs versions.
+- [ ] Collecter les CVE et avis de sécurité depuis des sources fiables.
+- [ ] Identifier les vulnérabilités potentiellement applicables.
+- [ ] Vérifier les versions affectées et les correctifs disponibles.
+- [ ] Générer des rapports de vulnérabilités priorisés.
+- [ ] Automatiser les contrôles périodiques et les rapports.
+- [ ] Préparer des recommandations de remédiation sans appliquer automatiquement les actions risquées.
+
+### Phase 8 — Audit de sécurité et pentest automatisé
+
+- [ ] Définir le périmètre autorisé et les règles d’exécution.
+- [ ] Réaliser des contrôles de configuration et de sécurité.
+- [ ] Automatiser la détection et la validation non destructive des vulnérabilités.
+- [ ] Ajouter des tests ciblés sur les services explicitement autorisés.
+- [ ] Encadrer les tests intrusifs par des limites et des confirmations.
+- [ ] Produire des rapports avec preuves, risques et mesures correctives.
+- [ ] Vérifier les corrections après remédiation.
+- [ ] Étudier des scénarios d’exploitation contrôlée dans un environnement isolé.
+- [ ] Valider le processus complet avant toute extension à d’autres systèmes.
+
 ## 📁 Structure du projet
 
 La structure évolue avec les fonctionnalités. Les principaux composants comprennent :
@@ -833,6 +866,10 @@ Les répertoires `data/`, `.venv/`, `node_modules/`, les fichiers `.env` locaux 
 La licence et les règles de contribution seront définies lorsque l'architecture initiale du projet sera stabilisée.
 
 ---
+
+## 🌦️ Veille météo, CVE et pentest
+
+Les flux RSS, la veille météo, la collecte de CVE et le pentest automatisé sont des objectifs futurs de la feuille de route. Ils ne sont pas présentés comme des fonctionnalités déjà implémentées. La démarche de sécurité commencera par l’inventaire, la veille et les contrôles non destructifs, avant d’envisager des tests intrusifs limités aux systèmes autorisés.
 
 ## 📌 État actuel du projet
 
