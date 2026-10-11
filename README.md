@@ -863,9 +863,15 @@ Les répertoires `data/`, `.venv/`, `node_modules/`, les fichiers `.env` locaux 
 
 ## 📄 Licence et contribution
 
-La licence et les règles de contribution seront définies lorsque l'architecture initiale du projet sera stabilisée.
+LabPilot est distribué sous licence [MIT](LICENSE).
+
+Vous êtes libre d'utiliser, de copier, de modifier et de distribuer ce logiciel, y compris à des fins commerciales, sous réserve de conserver les mentions de copyright et de licence.
+
+Consultez le fichier [LICENSE](LICENSE) pour connaître les conditions complètes.
 
 ---
+
+Les contributions seront très prochaiment ouvertes.
 
 ## 🌦️ Veille, météo, CVE et pentest
 
