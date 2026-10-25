@@ -174,8 +174,9 @@ Le catalogue évolue au fil des intégrations. Il comprend notamment :
 - `etat_ollama` : consulter le serveur Ollama et les modèles ;
 - `etat_home_assistant` : consulter des informations de Home Assistant ;
 - `etat_proxmox` : consulter les nœuds et machines du cluster Proxmox ;
-- `inventaire_os_proxmox` : collecter les informations OS des VM QEMU en fonctionnement via le QEMU Guest Agent.
-- `rechercher_cve` : rechercher des CVE candidates dans la base publique NVD à partir d'un produit et d'une version. Les résultats sont indicatifs et ne confirment pas l'applicabilité d'une vulnérabilité.
+- `inventaire_os_proxmox` : collecter les informations OS des VM QEMU en fonctionnement via le QEMU Guest Agent ;
+- `rechercher_cve` : rechercher des CVE candidates dans la base publique NVD à partir d'un produit et d'une version. Les résultats sont indicatifs et ne confirment pas l'applicabilité d'une vulnérabilité ;
+- `audit_cve_proxmox` : inventorier les OS des VM QEMU en fonctionnement et rechercher des CVE candidates pour chaque machine dont l'OS et la version sont identifiés.
 
 Les outils Proxmox sont conçus pour fonctionner en lecture seule.
 
@@ -922,6 +923,32 @@ Les résultats peuvent inclure l'identifiant CVE, la description en anglais, le 
 Cet outil est destiné à la veille et à l'analyse en lecture seule. Il ne corrige pas les vulnérabilités et ne lance aucun test intrusif.
 
 La démarche de sécurité évoluera progressivement : inventaire des systèmes, recherche de vulnérabilités candidates, vérification de leur applicabilité, puis contrôles non destructifs sur les systèmes autorisés.
+
+### Audit CVE des VM Proxmox
+
+L'outil `audit_cve_proxmox` automatise les premières étapes de la recherche de vulnérabilités sur les machines virtuelles QEMU en fonctionnement.
+
+**Fonctionnement :**
+1. Collecte les informations du système d'exploitation via `inventaire_os_proxmox` et le QEMU Guest Agent.
+2. Ignore les machines dont l'OS ou la version ne sont pas identifiés.
+3. Interroge la base publique NVD avec `rechercher_cve` pour chaque machine exploitable.
+4. Conserve les résultats et les erreurs individuellement afin qu'un échec de recherche ne bloque pas l'audit des autres machines.
+
+**Paramètre :**
+- `limite_par_machine` : nombre maximal de CVE candidates recherchées par machine, de 1 à 20 (20 par défaut).
+
+**États possibles :**
+- `terminee` : recherche effectuée ;
+- `ignoree_os_non_identifie` : système d'exploitation non identifié ou collecte incomplète ;
+- `ignoree_version_inconnue` : version du système inconnue ;
+- `erreur_recherche_cve` : recherche impossible ou réponse invalide.
+
+**Limites et sécurité :**
+- L'audit porte sur les VM QEMU en fonctionnement ; il ne couvre pas les conteneurs LXC.
+- La collecte de l'OS nécessite un QEMU Guest Agent opérationnel et accessible.
+- Les résultats NVD sont des CVE candidates issues d'une recherche par mots-clés. Ils ne prouvent pas qu'une vulnérabilité affecte effectivement la machine.
+- Les CPE, les versions affectées et les avis de sécurité des fournisseurs doivent être vérifiés avant toute conclusion.
+- L'outil fonctionne en lecture seule : il ne corrige pas les vulnérabilités, ne modifie pas les machines et ne lance aucun test intrusif.
 
 ## 📌 État actuel du projet
 

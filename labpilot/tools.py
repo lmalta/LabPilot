@@ -586,6 +586,114 @@ def rechercher_cve(produit: str, version: str, limite: int = 20) -> dict:
         ),
     }
 
+
+def audit_cve_proxmox(limite_par_machine: int = 20) -> dict:
+    """Recherche des CVE candidates pour les OS des VM QEMU en fonctionnement."""
+    if (
+        isinstance(limite_par_machine, bool)
+        or not isinstance(limite_par_machine, int)
+        or not 1 <= limite_par_machine <= 20
+    ):
+        return {
+            "disponible": False,
+            "erreur": "limite_par_machine_invalide",
+            "machines": [],
+        }
+
+    try:
+        inventaire = inventaire_os_proxmox()
+    except Exception as erreur:
+        return {
+            "disponible": False,
+            "erreur": "inventaire_proxmox_indisponible",
+            "detail": str(erreur),
+            "machines": [],
+        }
+
+    if (
+        not isinstance(inventaire, dict)
+        or not isinstance(inventaire.get("machines"), list)
+        or any(not isinstance(machine, dict) for machine in inventaire["machines"])
+    ):
+        return {
+            "disponible": False,
+            "erreur": "inventaire_proxmox_invalide",
+            "machines": [],
+        }
+
+    machines_auditees = []
+
+    for machine in inventaire["machines"]:
+        resultat_machine = dict(machine)
+        resultat_machine["cve"] = []
+        resultat_machine["etat_audit_cve"] = "ignoree_os_non_identifie"
+
+        nom_os = machine.get("nom_os")
+        if (
+            machine.get("etat_collecte") != "collecte_ok"
+            or not isinstance(nom_os, str)
+            or not nom_os.strip()
+        ):
+            machines_auditees.append(resultat_machine)
+            continue
+
+        version = machine.get("version_id_os") or machine.get("version_os")
+        if not isinstance(version, str) or not version.strip():
+            resultat_machine["etat_audit_cve"] = "ignoree_version_inconnue"
+            machines_auditees.append(resultat_machine)
+            continue
+
+        try:
+            recherche = rechercher_cve(
+                produit=nom_os.strip(),
+                version=version.strip(),
+                limite=limite_par_machine,
+            )
+        except Exception as erreur:
+            resultat_machine["etat_audit_cve"] = "erreur_recherche_cve"
+            resultat_machine["erreur_cve"] = type(erreur).__name__
+            machines_auditees.append(resultat_machine)
+            continue
+
+        if (
+            not isinstance(recherche, dict)
+            or recherche.get("disponible") is not True
+            or not isinstance(recherche.get("cve"), list)
+            or any(not isinstance(cve, dict) for cve in recherche["cve"])
+        ):
+            resultat_machine["etat_audit_cve"] = "erreur_recherche_cve"
+            if isinstance(recherche, dict) and recherche.get("disponible") is not True:
+                resultat_machine["erreur_cve"] = recherche.get(
+                    "erreur", "reponse_indisponible"
+                )
+            else:
+                resultat_machine["erreur_cve"] = "reponse_invalide"
+        else:
+            resultat_machine["cve"] = recherche["cve"]
+            resultat_machine["source_cve"] = recherche.get("source", "NVD")
+            resultat_machine["avertissement_cve"] = recherche.get(
+                "avertissement",
+                "Les CVE candidates doivent être vérifiées avant toute conclusion.",
+            )
+            resultat_machine["etat_audit_cve"] = "terminee"
+
+        machines_auditees.append(resultat_machine)
+
+    return {
+        "disponible": True,
+        "nombre_machines": len(machines_auditees),
+        "nombre_machines_auditees": sum(
+            machine["etat_audit_cve"] == "terminee"
+            for machine in machines_auditees
+        ),
+        "machines": machines_auditees,
+        "avertissement": (
+            "Les résultats NVD sont des CVE candidates issues d'une recherche "
+            "par mots-clés. Ils ne prouvent pas l'applicabilité à une machine. "
+            "Vérifier les CPE, les versions affectées et les avis des fournisseurs."
+        ),
+    }
+
 OUTILS = {
     "heure_actuelle": heure_actuelle,
     "heure_dans": heure_dans,
@@ -596,6 +704,7 @@ OUTILS = {
     "etat_proxmox": etat_proxmox,
     "inventaire_os_proxmox": inventaire_os_proxmox,
     "rechercher_cve": rechercher_cve,
+    "audit_cve_proxmox": audit_cve_proxmox,
 }
 
 DEFINITIONS_OUTILS = [
@@ -749,6 +858,36 @@ DEFINITIONS_OUTILS = [
                     },
                 },
                 "required": ["produit", "version"],
+            },
+        },
+    },
+
+    {
+        "type": "function",
+        "function": {
+            "name": "audit_cve_proxmox",
+            "description": (
+                "Réalise un audit indicatif des CVE des VM QEMU Proxmox "
+                "en fonctionnement. Collecte leur OS via l'agent invité, "
+                "puis recherche des CVE candidates dans la NVD pour les OS "
+                "et versions identifiés. Ignore les machines dont l'OS ou "
+                "la version n'est pas identifié, et poursuit l'audit si une "
+                "recherche échoue. Les résultats ne prouvent pas qu'une CVE "
+                "est applicable : vérifier les CPE et les avis fournisseurs. "
+                "Outil en lecture seule, limité aux VM QEMU, pas aux LXC."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "limite_par_machine": {
+                        "type": "integer",
+                        "description": (
+                            "Nombre maximal de CVE candidates par VM, "
+                            "entre 1 et 20. Par défaut : 20."
+                        ),
+                    },
+                },
+                "required": [],
             },
         },
     },
