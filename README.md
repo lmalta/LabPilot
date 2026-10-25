@@ -175,6 +175,7 @@ Le catalogue évolue au fil des intégrations. Il comprend notamment :
 - `etat_home_assistant` : consulter des informations de Home Assistant ;
 - `etat_proxmox` : consulter les nœuds et machines du cluster Proxmox ;
 - `inventaire_os_proxmox` : collecter les informations OS des VM QEMU en fonctionnement via le QEMU Guest Agent.
+- `rechercher_cve` : rechercher des CVE candidates dans la base publique NVD à partir d'un produit et d'une version. Les résultats sont indicatifs et ne confirment pas l'applicabilité d'une vulnérabilité.
 
 Les outils Proxmox sont conçus pour fonctionner en lecture seule.
 
@@ -895,7 +896,7 @@ Consultez le fichier [LICENSE](LICENSE) pour connaître les conditions complète
 
 ---
 
-Les contributions seront très prochaiment ouvertes.
+Les contributions seront très prochainement ouvertes.
 
 ## 🌦️ Veille, météo, CVE et pentest
 
