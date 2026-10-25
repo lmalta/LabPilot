@@ -899,7 +899,28 @@ Les contributions seront très prochaiment ouvertes.
 
 ## 🌦️ Veille, météo, CVE et pentest
 
-Les flux RSS, la veille météo, la collecte de CVE et le pentest automatisé sont des objectifs futurs de la feuille de route. Ils ne sont pas présentés comme des fonctionnalités déjà implémentées. La démarche de sécurité commencera par l’inventaire, la veille et les contrôles non destructifs, avant d’envisager des tests intrusifs limités aux systèmes autorisés.
+Les flux RSS, la veille météo et le pentest automatisé restent des objectifs de la feuille de route. La recherche de CVE dispose désormais d'un premier outil dédié utilisant l'API publique NVD.
+
+### Recherche de CVE
+
+L'outil `rechercher_cve` interroge l'API NVD à partir d'un nom de produit et d'une version.
+
+Paramètres :
+- `produit` : nom du logiciel ou du produit recherché ;
+- `version` : version à examiner ;
+- `limite` : nombre maximal de résultats, de 1 à 20 (20 par défaut).
+
+Les résultats peuvent inclure l'identifiant CVE, la description en anglais, le score CVSS lorsqu'il est disponible, les dates de publication et de modification, ainsi que les références associées.
+
+**Limites importantes :**
+- une recherche par mots-clés ne prouve pas qu'une CVE affecte effectivement le produit installé ;
+- l'applicabilité doit être vérifiée à partir des versions affectées, des CPE et des avis de sécurité du fournisseur ;
+- l'absence de résultat ne garantit pas l'absence de vulnérabilité ;
+- la disponibilité de l'API et la qualité des informations retournées dépendent de la source NVD.
+
+Cet outil est destiné à la veille et à l'analyse en lecture seule. Il ne corrige pas les vulnérabilités et ne lance aucun test intrusif.
+
+La démarche de sécurité évoluera progressivement : inventaire des systèmes, recherche de vulnérabilités candidates, vérification de leur applicabilité, puis contrôles non destructifs sur les systèmes autorisés.
 
 ## 📌 État actuel du projet
 

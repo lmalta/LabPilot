@@ -6,6 +6,7 @@ import json
 import ssl
 import urllib.error
 import urllib.request
+from urllib.parse import urlencode
 from datetime import datetime, timedelta
 from labpilot.configuration import (
     HOME_ASSISTANT_URL,
@@ -456,6 +457,135 @@ def inventaire_os_proxmox() -> dict:
         ),
     }
 
+
+def rechercher_cve(produit: str, version: str, limite: int = 20) -> dict:
+    """Recherche des CVE candidates dans l'API publique NVD, sans confirmer leur applicabilité."""
+    if not isinstance(produit, str) or not produit.strip():
+        raise ValueError("Le produit doit être une chaîne non vide.")
+    if not isinstance(version, str) or not version.strip():
+        raise ValueError("La version doit être une chaîne non vide.")
+    if isinstance(limite, bool) or not isinstance(limite, int) or not 1 <= limite <= 20:
+        raise ValueError("La limite doit être un entier compris entre 1 et 20.")
+
+    parametres = urlencode({
+        "keywordSearch": f"{produit.strip()} {version.strip()}",
+        "resultsPerPage": limite,
+    })
+    url = f"https://services.nvd.nist.gov/rest/json/cves/2.0?{parametres}"
+    requete = urllib.request.Request(
+        url,
+        headers={"User-Agent": "LabPilot/0.1.0"},
+    )
+
+    try:
+        with urllib.request.urlopen(requete, timeout=10) as reponse:
+            donnees = json.loads(reponse.read().decode("utf-8"))
+    except urllib.error.HTTPError as erreur:
+        return {
+            "disponible": False,
+            "erreur": "erreur_http",
+            "code_http": erreur.code,
+            "cve": [],
+        }
+    except (urllib.error.URLError, TimeoutError, ConnectionError):
+        return {
+            "disponible": False,
+            "erreur": "erreur_reseau",
+            "cve": [],
+        }
+    except (json.JSONDecodeError, UnicodeDecodeError):
+        return {
+            "disponible": False,
+            "erreur": "reponse_json_invalide",
+            "cve": [],
+        }
+
+    if not isinstance(donnees, dict):
+        return {"disponible": False, "erreur": "reponse_json_invalide", "cve": []}
+
+    vulnerabilites = donnees.get("vulnerabilities", [])
+    if not isinstance(vulnerabilites, list):
+        return {"disponible": False, "erreur": "reponse_json_invalide", "cve": []}
+
+    cves = []
+    for element in vulnerabilites[:limite]:
+        if not isinstance(element, dict):
+            return {"disponible": False, "erreur": "reponse_json_invalide", "cve": []}
+
+        cve = element.get("cve")
+        if not isinstance(cve, dict):
+            return {"disponible": False, "erreur": "reponse_json_invalide", "cve": []}
+
+        identifiant = cve.get("id")
+        if not isinstance(identifiant, str):
+            continue
+
+        descriptions = cve.get("descriptions", [])
+        if not isinstance(descriptions, list):
+            return {"disponible": False, "erreur": "reponse_json_invalide", "cve": []}
+        if any(not isinstance(item, dict) for item in descriptions):
+            return {"disponible": False, "erreur": "reponse_json_invalide", "cve": []}
+
+        description = next(
+            (
+                item.get("value")
+                for item in descriptions
+                if item.get("lang") == "en" and isinstance(item.get("value"), str)
+            ),
+            None,
+        )
+
+        scores = cve.get("metrics", {})
+        if not isinstance(scores, dict):
+            return {"disponible": False, "erreur": "reponse_json_invalide", "cve": []}
+
+        cvss = None
+        for cle in ("cvssMetricV40", "cvssMetricV31", "cvssMetricV30", "cvssMetricV2"):
+            metriques = scores.get(cle, [])
+            if not isinstance(metriques, list):
+                return {"disponible": False, "erreur": "reponse_json_invalide", "cve": []}
+            if metriques:
+                premiere = metriques[0]
+                if not isinstance(premiere, dict):
+                    return {"disponible": False, "erreur": "reponse_json_invalide", "cve": []}
+                cvss_data = premiere.get("cvssData", {})
+                if not isinstance(cvss_data, dict):
+                    return {"disponible": False, "erreur": "reponse_json_invalide", "cve": []}
+                cvss = cvss_data.get("baseScore")
+                break
+
+        references = cve.get("references", [])
+        if not isinstance(references, list):
+            return {"disponible": False, "erreur": "reponse_json_invalide", "cve": []}
+        if any(not isinstance(reference, dict) for reference in references):
+            return {"disponible": False, "erreur": "reponse_json_invalide", "cve": []}
+
+        cves.append({
+            "id": identifiant,
+            "description": description,
+            "score_cvss": cvss,
+            "date_publication": cve.get("published"),
+            "date_modification": cve.get("lastModified"),
+            "references": [
+                reference["url"]
+                for reference in references
+                if isinstance(reference.get("url"), str)
+            ],
+            "applicabilite": "a_verifier",
+        })
+
+    return {
+        "disponible": True,
+        "source": "NVD",
+        "nombre_resultats": len(cves),
+        "cve": cves,
+        "avertissement": (
+            "Résultats de recherche par mots-clés : ils ne confirment pas "
+            "l'applicabilité d'une CVE au produit ou à sa version. "
+            "Vérifier les configurations CPE et les avis de sécurité du fournisseur."
+        ),
+    }
+
 OUTILS = {
     "heure_actuelle": heure_actuelle,
     "heure_dans": heure_dans,
@@ -465,6 +595,7 @@ OUTILS = {
     "etat_home_assistant": etat_home_assistant,
     "etat_proxmox": etat_proxmox,
     "inventaire_os_proxmox": inventaire_os_proxmox,
+    "rechercher_cve": rechercher_cve,
 }
 
 DEFINITIONS_OUTILS = [
@@ -587,6 +718,37 @@ DEFINITIONS_OUTILS = [
                 "type": "object",
                 "properties": {},
                 "required": [],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "rechercher_cve",
+            "description": (
+                "Recherche des CVE candidates dans la base publique NVD "
+                "à partir d'un nom de produit et d'une version. "
+                "Les résultats sont indicatifs : ils ne prouvent pas "
+                "que le produit ou la version est vulnérable. "
+                "Cet outil est en lecture seule."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "produit": {
+                        "type": "string",
+                        "description": "Nom du produit à rechercher, par exemple OpenSSH.",
+                    },
+                    "version": {
+                        "type": "string",
+                        "description": "Version exacte à rechercher, par exemple 9.8.",
+                    },
+                    "limite": {
+                        "type": "integer",
+                        "description": "Nombre maximal de résultats, entre 1 et 20. Par défaut : 20.",
+                    },
+                },
+                "required": ["produit", "version"],
             },
         },
     },

@@ -282,6 +282,7 @@ def test_etat_home_assistant_configuration_absente():
     assert resultat["erreur"] == "RuntimeError"
     urlopen.assert_not_called()
 
+
 def test_etat_proxmox():
     ressources = [
         {
@@ -754,8 +755,6 @@ def test_inventaire_os_proxmox_recupere_os_vm():
     assert urlopen.call_count == 2
 
 
-
-
 def test_inventaire_os_proxmox_continue_si_agent_indisponible():
     from urllib.error import URLError
     from labpilot.tools import inventaire_os_proxmox
@@ -1032,3 +1031,107 @@ def test_inventaire_os_proxmox_erreur_connexion():
 
     assert "secret-fictif" not in str(erreur.value)
     assert "ConnectionError" in str(erreur.value)
+
+
+def test_rechercher_cve_reponse_nvd_valide():
+    from labpilot.tools import rechercher_cve
+
+    donnees = {
+        "vulnerabilities": [
+            {
+                "cve": {
+                    "id": "CVE-2025-12345",
+                    "descriptions": [
+                        {"lang": "en", "value": "Example vulnerability"}
+                    ],
+                    "metrics": {
+                        "cvssMetricV31": [
+                            {"cvssData": {"baseScore": 8.1}}
+                        ]
+                    },
+                    "published": "2025-01-01T00:00:00.000",
+                    "lastModified": "2025-01-02T00:00:00.000",
+                    "references": [{"url": "https://example.com/advisory"}],
+                }
+            }
+        ]
+    }
+
+    with patch("labpilot.tools.urllib.request.urlopen") as urlopen:
+        reponse = urlopen.return_value.__enter__.return_value
+        reponse.read.return_value = json.dumps(donnees).encode("utf-8")
+
+        resultat = rechercher_cve("OpenSSH", "9.8")
+
+    assert resultat["disponible"] is True
+    assert resultat["source"] == "NVD"
+    assert resultat["nombre_resultats"] == 1
+    assert resultat["cve"][0]["id"] == "CVE-2025-12345"
+    assert resultat["cve"][0]["score_cvss"] == 8.1
+    assert resultat["cve"][0]["applicabilite"] == "a_verifier"
+    urlopen.assert_called_once()
+    assert urlopen.call_args.kwargs["timeout"] == 10
+
+
+@pytest.mark.parametrize(
+    ("produit", "version", "limite"),
+    [
+        ("", "9.8", 20),
+        ("OpenSSH", "", 20),
+        ("OpenSSH", "9.8", 0),
+        ("OpenSSH", "9.8", 21),
+        ("OpenSSH", "9.8", True),
+    ],
+)
+
+def test_rechercher_cve_rejette_parametres_invalides(
+    produit, version, limite
+):
+    from labpilot.tools import rechercher_cve
+
+    with patch("labpilot.tools.urllib.request.urlopen") as urlopen:
+        with pytest.raises(ValueError):
+            rechercher_cve(produit, version, limite)
+
+    urlopen.assert_not_called()
+
+
+def test_rechercher_cve_erreur_reseau():
+    from urllib.error import URLError
+    from labpilot.tools import rechercher_cve
+
+    with patch(
+        "labpilot.tools.urllib.request.urlopen",
+        side_effect=URLError("erreur réseau fictive"),
+    ):
+        resultat = rechercher_cve("OpenSSH", "9.8")
+
+    assert resultat == {
+        "disponible": False,
+        "erreur": "erreur_reseau",
+        "cve": [],
+    }
+
+@pytest.mark.parametrize(
+    "donnees",
+    [
+        [],
+        {"vulnerabilities": [None]},
+        {"vulnerabilities": [{"cve": None}]},
+        {"vulnerabilities": [{"cve": {"id": "CVE-2025-12345", "descriptions": [None]}}]},
+        {"vulnerabilities": [{"cve": {"id": "CVE-2025-12345", "metrics": None}}]},
+        {"vulnerabilities": [{"cve": {"id": "CVE-2025-12345", "references": [None]}}]},
+    ],
+)
+def test_rechercher_cve_reponse_nvd_malformee(donnees):
+    from labpilot.tools import rechercher_cve
+
+    with patch("labpilot.tools.urllib.request.urlopen") as urlopen:
+        reponse = urlopen.return_value.__enter__.return_value
+        reponse.read.return_value = json.dumps(donnees).encode("utf-8")
+
+        resultat = rechercher_cve("OpenSSH", "9.8")
+
+    assert resultat["disponible"] is False
+    assert resultat["erreur"] == "reponse_json_invalide"
+    assert resultat["cve"] == []

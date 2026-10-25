@@ -16,6 +16,7 @@ const outilsAttendus = [
   "etat_home_assistant",
   "etat_proxmox",
   "inventaire_os_proxmox",
+  "rechercher_cve",
 ];
 
 test("l'outil heure_actuelle est correctement défini", () => {
@@ -91,7 +92,7 @@ test("l'outil etat_proxmox est correctement défini", () => {
   assert.equal(outil.function.parameters.type, "object");
 });
 
-test("le catalogue contient exactement les huit outils attendus", () => {
+test("le catalogue contient exactement les neuf outils attendus", () => {
   assert.deepEqual(
     definitionsOutils.map((outil) => outil.function.name),
     outilsAttendus,

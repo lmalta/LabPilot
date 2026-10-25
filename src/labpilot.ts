@@ -152,4 +152,34 @@ export const definitionsOutils: ToolDefinition[] = [
       },
     },
   },
+  {
+    type: "function",
+    function: {
+      name: "rechercher_cve",
+      description:
+        "Recherche des CVE candidates dans la base publique NVD " +
+        "à partir d'un nom de produit et d'une version. " +
+        "Les résultats sont indicatifs et ne prouvent pas " +
+        "l'applicabilité d'une CVE au produit ou à sa version. " +
+        "Cet outil est en lecture seule.",
+      parameters: {
+        type: "object",
+        properties: {
+          produit: {
+            type: "string",
+            description: "Nom du produit à rechercher, par exemple OpenSSH.",
+          },
+          version: {
+            type: "string",
+            description: "Version exacte à rechercher, par exemple 9.8.",
+          },
+          limite: {
+            type: "integer",
+            description: "Nombre maximal de résultats, entre 1 et 20.",
+          },
+        },
+        required: ["produit", "version"],
+      },
+    },
+  },
 ];
