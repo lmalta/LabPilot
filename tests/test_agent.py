@@ -3,7 +3,7 @@ import pytest
 from unittest.mock import patch
 from labpilot.agent import Agent, MAX_CYCLES_OUTILS, executer_outil
 from labpilot.tools import etat_gpu, etat_ollama, etat_home_assistant
-from labpilot.tools import etat_proxmox, DEFINITIONS_OUTILS
+from labpilot.tools import etat_proxmox, DEFINITIONS_OUTILS, audit_cve_proxmox, OUTILS
 
 
 def test_creation_agent():
@@ -1135,3 +1135,225 @@ def test_rechercher_cve_reponse_nvd_malformee(donnees):
     assert resultat["disponible"] is False
     assert resultat["erreur"] == "reponse_json_invalide"
     assert resultat["cve"] == []
+
+def test_audit_cve_proxmox_rejette_inventaire_mal_forme(monkeypatch):
+    monkeypatch.setattr(
+        "labpilot.tools.inventaire_os_proxmox",
+        lambda: {"disponible": True, "machines": [None]},
+    )
+
+    resultat = audit_cve_proxmox()
+
+    assert resultat["disponible"] is False
+    assert resultat["erreur"] == "inventaire_proxmox_invalide"
+    assert resultat["machines"] == []
+
+
+def test_audit_cve_proxmox_rejette_reponse_cve_mal_formee(monkeypatch):
+    monkeypatch.setattr(
+        "labpilot.tools.inventaire_os_proxmox",
+        lambda: {
+            "disponible": True,
+            "machines": [
+                {
+                    "vmid": 101,
+                    "nom": "ubuntu-test",
+                    "etat_collecte": "collecte_ok",
+                    "nom_os": "Ubuntu",
+                    "version_id_os": "24.04",
+                }
+            ],
+        },
+    )
+    monkeypatch.setattr(
+        "labpilot.tools.rechercher_cve",
+        lambda **kwargs: {"disponible": True, "cve": "format-invalide"},
+    )
+
+    resultat = audit_cve_proxmox()
+
+    assert resultat["disponible"] is True
+    assert resultat["nombre_machines_auditees"] == 0
+    assert resultat["machines"][0]["etat_audit_cve"] == "erreur_recherche_cve"
+    assert resultat["machines"][0]["erreur_cve"] == "reponse_invalide"
+
+
+def test_audit_cve_proxmox_recherche_cve_pour_os_identifie():
+    with (
+        patch(
+            "labpilot.tools.inventaire_os_proxmox",
+            return_value={
+                "disponible": True,
+                "nombre_vm_qemu_en_fonctionnement": 1,
+                "nombre_os_identifies": 1,
+                "machines": [
+                    {
+                        "vmid": 100,
+                        "nom": "vm-ubuntu",
+                        "noeud": "pve",
+                        "etat_collecte": "collecte_ok",
+                        "nom_os": "Ubuntu",
+                        "version_os": "Ubuntu 24.04.3 LTS",
+                        "version_id_os": "24.04",
+                        "noyau": "6.8.0",
+                    }
+                ],
+            },
+        ),
+        patch(
+            "labpilot.tools.rechercher_cve",
+            return_value={
+                "disponible": True,
+                "source": "NVD",
+                "nombre_resultats": 1,
+                "cve": [
+                    {
+                        "id": "CVE-2025-12345",
+                        "applicabilite": "a_verifier",
+                    }
+                ],
+            },
+        ) as rechercher_cve_mock,
+    ):
+        resultat = audit_cve_proxmox()
+
+    rechercher_cve_mock.assert_called_once_with(
+        produit="Ubuntu",
+        version="24.04",
+        limite=20,
+    )
+    assert resultat["disponible"] is True
+    assert len(resultat["machines"]) == 1
+    assert resultat["machines"][0]["vmid"] == 100
+    assert resultat["machines"][0]["cve"][0]["id"] == "CVE-2025-12345"
+
+def test_audit_cve_proxmox_continue_apres_erreur_nvd():
+    inventaire = {
+        "disponible": True,
+        "nombre_vm_qemu_en_fonctionnement": 2,
+        "nombre_os_identifies": 2,
+        "machines": [
+            {
+                "vmid": 100,
+                "nom": "vm-ubuntu",
+                "noeud": "pve",
+                "etat_collecte": "collecte_ok",
+                "nom_os": "Ubuntu",
+                "version_os": "Ubuntu 24.04 LTS",
+                "version_id_os": "24.04",
+                "noyau": "6.8.0",
+            },
+            {
+                "vmid": 101,
+                "nom": "vm-debian",
+                "noeud": "pve",
+                "etat_collecte": "collecte_ok",
+                "nom_os": "Debian GNU/Linux",
+                "version_os": "Debian GNU/Linux 12",
+                "version_id_os": "12",
+                "noyau": "6.1.0",
+            },
+        ],
+    }
+
+    with (
+        patch(
+            "labpilot.tools.inventaire_os_proxmox",
+            return_value=inventaire,
+        ),
+        patch(
+            "labpilot.tools.rechercher_cve",
+            side_effect=[
+                RuntimeError("NVD indisponible"),
+                {
+                    "disponible": True,
+                    "source": "NVD",
+                    "nombre_resultats": 1,
+                    "cve": [
+                        {
+                            "id": "CVE-2025-12345",
+                            "applicabilite": "a_verifier",
+                        }
+                    ],
+                    "avertissement": "Applicabilité à vérifier.",
+                },
+            ],
+        ) as rechercher_cve_mock,
+    ):
+        resultat = audit_cve_proxmox()
+
+    assert rechercher_cve_mock.call_count == 2
+    assert resultat["disponible"] is True
+    assert resultat["nombre_machines_auditees"] == 1
+    assert resultat["machines"][0]["etat_audit_cve"] == "erreur_recherche_cve"
+    assert resultat["machines"][1]["etat_audit_cve"] == "terminee"
+    assert resultat["machines"][1]["cve"][0]["id"] == "CVE-2025-12345"
+
+def test_audit_cve_proxmox_gere_indisponibilite_proxmox():
+    with patch(
+        "labpilot.tools.inventaire_os_proxmox",
+        side_effect=RuntimeError("Proxmox inaccessible"),
+    ):
+        resultat = audit_cve_proxmox()
+
+    assert resultat["disponible"] is False
+    assert resultat["erreur"] == "inventaire_proxmox_indisponible"
+    assert resultat["machines"] == []
+
+def test_audit_cve_proxmox_rejette_limite_invalide():
+    with patch("labpilot.tools.inventaire_os_proxmox") as inventaire_mock:
+        resultat = audit_cve_proxmox(limite_par_machine=0)
+
+    assert resultat["disponible"] is False
+    assert resultat["erreur"] == "limite_par_machine_invalide"
+    assert resultat["machines"] == []
+    inventaire_mock.assert_not_called()
+
+def test_audit_cve_proxmox_ignore_os_non_identifie():
+    inventaire = {
+        "disponible": True,
+        "nombre_vm_qemu_en_fonctionnement": 1,
+        "nombre_os_identifies": 0,
+        "machines": [
+            {
+                "vmid": 102,
+                "nom": "vm-inconnue",
+                "noeud": "pve",
+                "etat_collecte": "os_inconnu",
+                "nom_os": None,
+                "version_os": None,
+                "version_id_os": None,
+                "noyau": None,
+            }
+        ],
+    }
+
+    with (
+        patch(
+            "labpilot.tools.inventaire_os_proxmox",
+            return_value=inventaire,
+        ),
+        patch("labpilot.tools.rechercher_cve") as rechercher_cve_mock,
+    ):
+        resultat = audit_cve_proxmox()
+
+    rechercher_cve_mock.assert_not_called()
+    assert resultat["disponible"] is True
+    assert resultat["nombre_machines"] == 1
+    assert resultat["nombre_machines_auditees"] == 0
+    assert resultat["machines"][0]["vmid"] == 102
+    assert resultat["machines"][0]["etat_audit_cve"] == "ignoree_os_non_identifie"
+    assert resultat["machines"][0]["cve"] == []
+
+
+def test_audit_cve_proxmox_est_enregistre_comme_outil():
+    assert OUTILS["audit_cve_proxmox"] is audit_cve_proxmox
+
+    definitions = [
+        definition["function"]
+        for definition in DEFINITIONS_OUTILS
+        if definition.get("function", {}).get("name") == "audit_cve_proxmox"
+    ]
+
+    assert len(definitions) == 1
+    assert "limite_par_machine" in definitions[0]["parameters"]["properties"]
