@@ -435,7 +435,7 @@ def inventaire_os_proxmox() -> dict:
                 machine["etat_collecte"] = "agent_indisponible"
         except (urllib.error.URLError, TimeoutError, ConnectionError):
             machine["etat_collecte"] = "agent_indisponible"
-        except (json.JSONDecodeError, RuntimeError):
+        except (ValueError, RuntimeError):
             machine["etat_collecte"] = "reponse_os_invalide"
 
         machines.append(machine)

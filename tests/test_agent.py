@@ -864,3 +864,46 @@ def test_inventaire_os_proxmox_authentification_refusee():
         resultat = inventaire_os_proxmox()
 
     assert resultat["machines"][0]["etat_collecte"] == "erreur_api"
+
+def test_inventaire_os_proxmox_reponse_os_invalide():
+    from labpilot.tools import inventaire_os_proxmox
+
+    ressources = {
+        "data": [
+            {
+                "type": "qemu",
+                "vmid": 300,
+                "name": "vm-test",
+                "node": "pve1",
+                "status": "running",
+            }
+        ]
+    }
+
+    reponse = type(
+        "Reponse",
+        (),
+        {"__enter__": lambda self: self, "__exit__": lambda *args: None},
+    )()
+
+    with (
+        patch("labpilot.tools.PROXMOX_URL", "https://proxmox-test:8006"),
+        patch("labpilot.tools.PROXMOX_TOKEN_ID", "test@pve!readonly"),
+        patch("labpilot.tools.PROXMOX_TOKEN_SECRET", "secret-fictif"),
+        patch("labpilot.tools.os.path.isfile", return_value=True),
+        patch("labpilot.tools.ssl.create_default_context"),
+        patch(
+            "labpilot.tools.urllib.request.urlopen",
+            side_effect=[reponse, reponse],
+        ),
+        patch(
+            "labpilot.tools.json.load",
+            side_effect=[ressources, ValueError("JSON invalide")],
+        ),
+    ):
+        resultat = inventaire_os_proxmox()
+
+    machine = resultat["machines"][0]
+    assert machine["etat_collecte"] == "reponse_os_invalide"
+    assert machine["nom_os"] is None
+    assert resultat["nombre_os_identifies"] == 0
