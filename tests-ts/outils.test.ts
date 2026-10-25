@@ -14,6 +14,7 @@ const outilsAttendus = [
   "etat_gpu",
   "etat_ollama",
   "etat_home_assistant",
+  "etat_proxmox",
 ];
 
 test("l'outil heure_actuelle est correctement défini", () => {
@@ -79,7 +80,17 @@ test("l'outil etat_home_assistant est correctement défini", () => {
   assert.deepEqual(outil.function.parameters.required, []);
 });
 
-test("le catalogue contient exactement les six outils attendus", () => {
+test("l'outil etat_proxmox est correctement défini", () => {
+  const outil = definitionsOutils.find(
+    (outil) => outil.function.name === "etat_proxmox",
+  );
+
+  assert.ok(outil);
+  assert.equal(outil.type, "function");
+  assert.equal(outil.function.parameters.type, "object");
+});
+
+test("le catalogue contient exactement les sept outils attendus", () => {
   assert.deepEqual(
     definitionsOutils.map((outil) => outil.function.name),
     outilsAttendus,
