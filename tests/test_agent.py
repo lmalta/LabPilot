@@ -1,4 +1,5 @@
 import json
+import pytest
 from unittest.mock import patch
 from labpilot.agent import Agent, MAX_CYCLES_OUTILS, executer_outil
 from labpilot.tools import etat_gpu, etat_ollama, etat_home_assistant
@@ -679,6 +680,7 @@ def test_etat_proxmox_cpu_nan():
     assert resultat["erreur"] == "RuntimeError"
     assert "cpu" in resultat["message"]
 
+
 def test_inventaire_os_proxmox_recupere_os_vm():
     from labpilot.tools import inventaire_os_proxmox
 
@@ -753,6 +755,7 @@ def test_inventaire_os_proxmox_recupere_os_vm():
 
 
 
+
 def test_inventaire_os_proxmox_continue_si_agent_indisponible():
     from urllib.error import URLError
     from labpilot.tools import inventaire_os_proxmox
@@ -815,6 +818,7 @@ def test_inventaire_os_proxmox_continue_si_agent_indisponible():
     assert machines[302]["nom_os"] == "Ubuntu 24.04 LTS"
     assert resultat["nombre_os_identifies"] == 1
 
+
 def test_inventaire_os_proxmox_authentification_refusee():
     from urllib.error import HTTPError
     from labpilot.tools import inventaire_os_proxmox
@@ -865,6 +869,61 @@ def test_inventaire_os_proxmox_authentification_refusee():
 
     assert resultat["machines"][0]["etat_collecte"] == "erreur_api"
 
+
+def test_inventaire_os_proxmox_permissions_insuffisantes():
+    from urllib.error import HTTPError
+    from labpilot.tools import inventaire_os_proxmox
+
+    ressources = {
+        "data": [
+            {
+                "type": "qemu",
+                "vmid": 300,
+                "name": "vm-test",
+                "node": "pve1",
+                "status": "running",
+            }
+        ]
+    }
+
+    reponse = type(
+        "Reponse",
+        (),
+        {"__enter__": lambda self: self, "__exit__": lambda *args: None},
+    )()
+
+    with (
+        patch("labpilot.tools.PROXMOX_URL", "https://proxmox-test:8006"),
+        patch("labpilot.tools.PROXMOX_TOKEN_ID", "test@pve!readonly"),
+        patch("labpilot.tools.PROXMOX_TOKEN_SECRET", "secret-fictif"),
+        patch("labpilot.tools.os.path.isfile", return_value=True),
+        patch("labpilot.tools.ssl.create_default_context"),
+        patch(
+            "labpilot.tools.urllib.request.urlopen",
+            side_effect=[
+                reponse,
+                HTTPError(
+                    "https://proxmox-test:8006/api2/json/nodes/pve1/qemu/300/agent/get-osinfo",
+                    403,
+                    "Forbidden",
+                    {},
+                    None,
+                ),
+            ],
+        ),
+        patch(
+            "labpilot.tools.json.load",
+            return_value=ressources,
+        ),
+    ):
+        resultat = inventaire_os_proxmox()
+
+    machine = resultat["machines"][0]
+    assert machine["etat_collecte"] == "erreur_api"
+    assert machine["nom_os"] is None
+    assert resultat["nombre_os_identifies"] == 0
+
+
 def test_inventaire_os_proxmox_reponse_os_invalide():
     from labpilot.tools import inventaire_os_proxmox
 
@@ -907,3 +966,69 @@ def test_inventaire_os_proxmox_reponse_os_invalide():
     assert machine["etat_collecte"] == "reponse_os_invalide"
     assert machine["nom_os"] is None
     assert resultat["nombre_os_identifies"] == 0
+
+
+def test_inventaire_os_proxmox_os_inconnu():
+    from labpilot.tools import inventaire_os_proxmox
+
+    ressources = {
+        "data": [
+            {
+                "type": "qemu",
+                "vmid": 300,
+                "name": "vm-test",
+                "node": "pve1",
+                "status": "running",
+            }
+        ]
+    }
+
+    reponse = type(
+        "Reponse",
+        (),
+        {"__enter__": lambda self: self, "__exit__": lambda *args: None},
+    )()
+
+    with (
+        patch("labpilot.tools.PROXMOX_URL", "https://proxmox-test:8006"),
+        patch("labpilot.tools.PROXMOX_TOKEN_ID", "test@pve!readonly"),
+        patch("labpilot.tools.PROXMOX_TOKEN_SECRET", "secret-fictif"),
+        patch("labpilot.tools.os.path.isfile", return_value=True),
+        patch("labpilot.tools.ssl.create_default_context"),
+        patch(
+            "labpilot.tools.urllib.request.urlopen",
+            side_effect=[reponse, reponse],
+        ),
+        patch(
+            "labpilot.tools.json.load",
+            side_effect=[ressources, {"data": {}}],
+        ),
+    ):
+        resultat = inventaire_os_proxmox()
+
+    machine = resultat["machines"][0]
+    assert machine["etat_collecte"] == "os_inconnu"
+    assert machine["nom_os"] is None
+    assert machine["version_os"] is None
+    assert resultat["nombre_os_identifies"] == 0
+
+
+def test_inventaire_os_proxmox_erreur_connexion():
+    from labpilot.tools import inventaire_os_proxmox
+
+    with (
+        patch("labpilot.tools.PROXMOX_URL", "https://proxmox-test:8006"),
+        patch("labpilot.tools.PROXMOX_TOKEN_ID", "test@pve!readonly"),
+        patch("labpilot.tools.PROXMOX_TOKEN_SECRET", "secret-fictif"),
+        patch("labpilot.tools.os.path.isfile", return_value=True),
+        patch("labpilot.tools.ssl.create_default_context"),
+        patch(
+            "labpilot.tools.urllib.request.urlopen",
+            side_effect=ConnectionError("secret-fictif"),
+        ),
+    ):
+        with pytest.raises(RuntimeError) as erreur:
+            inventaire_os_proxmox()
+
+    assert "secret-fictif" not in str(erreur.value)
+    assert "ConnectionError" in str(erreur.value)
