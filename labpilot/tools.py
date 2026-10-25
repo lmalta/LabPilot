@@ -1,6 +1,7 @@
 import os
 import platform
 import subprocess
+import math
 import json
 import ssl
 import urllib.request
@@ -162,6 +163,22 @@ def etat_home_assistant() -> dict:
     }
 
 
+def _nombre_proxmox_valide(valeur, nom_champ):
+    """Vérifie qu'une valeur numérique fournie par Proxmox est valide."""
+    if valeur is None:
+        return
+
+    if (
+        isinstance(valeur, bool)
+        or not isinstance(valeur, (int, float))
+        or not math.isfinite(valeur)
+        or valeur < 0
+    ):
+        raise RuntimeError(
+            f"Réponse Proxmox invalide : valeur incorrecte pour {nom_champ}."
+        )
+
+
 def etat_proxmox() -> dict:
     """Retourne l'état des nœuds et des VM/conteneurs Proxmox en lecture seule."""
     if not all((PROXMOX_URL, PROXMOX_TOKEN_ID, PROXMOX_TOKEN_SECRET)):
@@ -186,18 +203,36 @@ def etat_proxmox() -> dict:
         with urllib.request.urlopen(
             requete, timeout=10, context=contexte_tls
         ) as reponse:
-            ressources = json.load(reponse)["data"]
+            donnees = json.load(reponse)
     except Exception as erreur:
-        # Ne pas exposer les détails HTTP ou les informations d'authentification.
         raise RuntimeError(
             f"Impossible de consulter Proxmox ({type(erreur).__name__})."
         ) from None
+
+    if not isinstance(donnees, dict):
+        raise RuntimeError("Réponse Proxmox invalide : format inattendu.")
+
+    ressources = donnees.get("data")
+    if not isinstance(ressources, list):
+        raise RuntimeError(
+            "Réponse Proxmox invalide : la liste des ressources est absente ou invalide."
+        )
+
+    if any(not isinstance(ressource, dict) for ressource in ressources):
+        raise RuntimeError(
+            "Réponse Proxmox invalide : une ressource n'est pas un objet."
+        )
 
     noeuds = []
     machines = []
 
     for ressource in ressources:
         type_ressource = ressource.get("type")
+
+        for champ in ("cpu", "mem", "maxmem"):
+            _nombre_proxmox_valide(
+                ressource.get(champ), champ
+            )
 
         if type_ressource == "node":
             noeuds.append({

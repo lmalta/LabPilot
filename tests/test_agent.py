@@ -448,3 +448,233 @@ def test_etat_proxmox_erreur_api():
 
     assert resultat["erreur"] == "RuntimeError"
     assert "secret-fictif" not in resultat["message"]
+
+
+def test_etat_proxmox_authentification_refusee():
+    from urllib.error import HTTPError
+
+    with (
+        patch("labpilot.tools.PROXMOX_URL", "https://proxmox-test:8006"),
+        patch("labpilot.tools.PROXMOX_TOKEN_ID", "test@pve!readonly"),
+        patch("labpilot.tools.PROXMOX_TOKEN_SECRET", "secret-fictif"),
+        patch("labpilot.tools.os.path.isfile", return_value=True),
+        patch("labpilot.tools.ssl.create_default_context"),
+        patch(
+            "labpilot.tools.urllib.request.urlopen",
+            side_effect=HTTPError(
+                "https://proxmox-test:8006/api2/json/cluster/resources",
+                401,
+                "Unauthorized secret-fictif",
+                {},
+                None,
+            ),
+        ),
+    ):
+        resultat = executer_outil({
+            "function": {
+                "name": "etat_proxmox",
+                "arguments": {},
+            }
+        })
+
+    assert resultat["erreur"] == "RuntimeError"
+    assert "secret-fictif" not in resultat["message"]
+
+
+def test_etat_proxmox_permissions_insuffisantes():
+    from urllib.error import HTTPError
+
+    with (
+        patch("labpilot.tools.PROXMOX_URL", "https://proxmox-test:8006"),
+        patch("labpilot.tools.PROXMOX_TOKEN_ID", "test@pve!readonly"),
+        patch("labpilot.tools.PROXMOX_TOKEN_SECRET", "secret-fictif"),
+        patch("labpilot.tools.os.path.isfile", return_value=True),
+        patch("labpilot.tools.ssl.create_default_context"),
+        patch(
+            "labpilot.tools.urllib.request.urlopen",
+            side_effect=HTTPError(
+                "https://proxmox-test:8006/api2/json/cluster/resources",
+                403,
+                "Forbidden secret-fictif",
+                {},
+                None,
+            ),
+        ),
+    ):
+        resultat = executer_outil({
+            "function": {
+                "name": "etat_proxmox",
+                "arguments": {},
+            }
+        })
+
+    assert resultat["erreur"] == "RuntimeError"
+    assert "secret-fictif" not in resultat["message"]
+
+
+def test_etat_proxmox_certificat_ca_absent():
+    with (
+        patch("labpilot.tools.PROXMOX_URL", "https://proxmox-test:8006"),
+        patch("labpilot.tools.PROXMOX_TOKEN_ID", "test@pve!readonly"),
+        patch("labpilot.tools.PROXMOX_TOKEN_SECRET", "secret-fictif"),
+        patch("labpilot.tools.os.path.isfile", return_value=False),
+        patch("labpilot.tools.ssl.create_default_context") as create_context,
+        patch("labpilot.tools.urllib.request.urlopen") as urlopen,
+    ):
+        resultat = executer_outil({
+            "function": {
+                "name": "etat_proxmox",
+                "arguments": {},
+            }
+        })
+
+    assert resultat["erreur"] == "RuntimeError"
+    assert "certificat CA Proxmox est introuvable" in resultat["message"]
+    create_context.assert_not_called()
+    urlopen.assert_not_called()
+
+
+def test_etat_proxmox_reponse_data_non_liste():
+    with (
+        patch("labpilot.tools.PROXMOX_URL", "https://proxmox-test:8006"),
+        patch("labpilot.tools.PROXMOX_TOKEN_ID", "test@pve!readonly"),
+        patch("labpilot.tools.PROXMOX_TOKEN_SECRET", "secret-fictif"),
+        patch("labpilot.tools.os.path.isfile", return_value=True),
+        patch("labpilot.tools.ssl.create_default_context"),
+        patch("labpilot.tools.urllib.request.urlopen"),
+        patch("labpilot.tools.json.load", return_value={"data": "invalide"}),
+    ):
+        resultat = executer_outil({
+            "function": {
+                "name": "etat_proxmox",
+                "arguments": {},
+            }
+        })
+
+    assert resultat["erreur"] == "RuntimeError"
+
+
+def test_etat_proxmox_ressource_invalide():
+    with (
+        patch("labpilot.tools.PROXMOX_URL", "https://proxmox-test:8006"),
+        patch("labpilot.tools.PROXMOX_TOKEN_ID", "test@pve!readonly"),
+        patch("labpilot.tools.PROXMOX_TOKEN_SECRET", "secret-fictif"),
+        patch("labpilot.tools.os.path.isfile", return_value=True),
+        patch("labpilot.tools.ssl.create_default_context"),
+        patch("labpilot.tools.urllib.request.urlopen"),
+        patch("labpilot.tools.json.load", return_value={"data": ["invalide"]}),
+    ):
+        resultat = executer_outil({
+            "function": {
+                "name": "etat_proxmox",
+                "arguments": {},
+            }
+        })
+
+    assert resultat["erreur"] == "RuntimeError"
+
+
+def test_etat_proxmox_cpu_invalide():
+    from unittest.mock import mock_open
+
+    donnees_invalides = {
+        "data": [
+            {
+                "type": "node",
+                "node": "pve1",
+                "status": "online",
+                "cpu": "inconnu",
+                "mem": 1024,
+                "maxmem": 2048,
+            }
+        ]
+    }
+
+    with (
+        patch("labpilot.tools.PROXMOX_URL", "https://proxmox-test:8006"),
+        patch("labpilot.tools.PROXMOX_TOKEN_ID", "test@pve!readonly"),
+        patch("labpilot.tools.PROXMOX_TOKEN_SECRET", "secret-fictif"),
+        patch("labpilot.tools.os.path.isfile", return_value=True),
+        patch("labpilot.tools.ssl.create_default_context"),
+        patch("labpilot.tools.urllib.request.urlopen"),
+        patch("labpilot.tools.json.load", return_value=donnees_invalides),
+    ):
+        resultat = executer_outil({
+            "function": {
+                "name": "etat_proxmox",
+                "arguments": {},
+            }
+        })
+
+    assert resultat["erreur"] == "RuntimeError"
+    assert "inconnu" not in resultat["message"]
+
+
+def test_etat_proxmox_memoire_invalide():
+    for champ in ("mem", "maxmem"):
+        donnees_invalides = {
+            "data": [
+                {
+                    "type": "node",
+                    "node": "pve1",
+                    "status": "online",
+                    "cpu": 0.25,
+                    "mem": 1024,
+                    "maxmem": 2048,
+                    champ: "invalide",
+                }
+            ]
+        }
+
+        with (
+            patch("labpilot.tools.PROXMOX_URL", "https://proxmox-test:8006"),
+            patch("labpilot.tools.PROXMOX_TOKEN_ID", "test@pve!readonly"),
+            patch("labpilot.tools.PROXMOX_TOKEN_SECRET", "secret-fictif"),
+            patch("labpilot.tools.os.path.isfile", return_value=True),
+            patch("labpilot.tools.ssl.create_default_context"),
+            patch("labpilot.tools.urllib.request.urlopen"),
+            patch("labpilot.tools.json.load", return_value=donnees_invalides),
+        ):
+            resultat = executer_outil({
+                "function": {
+                    "name": "etat_proxmox",
+                    "arguments": {},
+                }
+            })
+
+        assert resultat["erreur"] == "RuntimeError"
+        assert champ in resultat["message"]
+
+
+def test_etat_proxmox_cpu_nan():
+    donnees_invalides = {
+        "data": [
+            {
+                "type": "node",
+                "node": "pve1",
+                "status": "online",
+                "cpu": float("nan"),
+                "mem": 1024,
+                "maxmem": 2048,
+            }
+        ]
+    }
+
+    with (
+        patch("labpilot.tools.PROXMOX_URL", "https://proxmox-test:8006"),
+        patch("labpilot.tools.PROXMOX_TOKEN_ID", "test@pve!readonly"),
+        patch("labpilot.tools.PROXMOX_TOKEN_SECRET", "secret-fictif"),
+        patch("labpilot.tools.os.path.isfile", return_value=True),
+        patch("labpilot.tools.ssl.create_default_context"),
+        patch("labpilot.tools.urllib.request.urlopen"),
+        patch("labpilot.tools.json.load", return_value=donnees_invalides),
+    ):
+        resultat = executer_outil({
+            "function": {
+                "name": "etat_proxmox",
+                "arguments": {},
+            }
+        })
+
+    assert resultat["erreur"] == "RuntimeError"
+    assert "cpu" in resultat["message"]
