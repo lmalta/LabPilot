@@ -135,4 +135,21 @@ export const definitionsOutils: ToolDefinition[] = [
       },
     },
   },
+  {
+    type: "function",
+    function: {
+      name: "inventaire_os_proxmox",
+      description:
+        "Collecte en lecture seule les informations du système " +
+        "d'exploitation des VM QEMU en fonctionnement via leur " +
+        "agent invité Proxmox. Une collecte peut être indisponible " +
+        "si l'agent ne répond pas. Cet outil ne détecte pas les CVE " +
+        "et ne couvre pas les conteneurs LXC.",
+      parameters: {
+        type: "object",
+        properties: {},
+        required: [],
+      },
+    },
+  },
 ];

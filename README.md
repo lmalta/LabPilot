@@ -173,7 +173,8 @@ Le catalogue évolue au fil des intégrations. Il comprend notamment :
 - `etat_gpu` : consulter l'état du GPU ;
 - `etat_ollama` : consulter le serveur Ollama et les modèles ;
 - `etat_home_assistant` : consulter des informations de Home Assistant ;
-- `etat_proxmox` : consulter les nœuds et machines du cluster Proxmox.
+- `etat_proxmox` : consulter les nœuds et machines du cluster Proxmox ;
+- `inventaire_os_proxmox` : collecter les informations OS des VM QEMU en fonctionnement via le QEMU Guest Agent.
 
 Les outils Proxmox sont conçus pour fonctionner en lecture seule.
 
@@ -324,6 +325,27 @@ Les états possibles comprennent :
 Un nœud hors ligne peut empêcher la récupération de l'état actuel de ses machines. Dans ce cas, `unknown` ne doit pas être assimilé à `stopped`.
 
 Les compteurs `machines_par_type`, `machines_par_etat` et `machines_par_type_et_etat` doivent provenir des données calculées par l'outil. Le modèle ne doit pas inventer de noms ni reconstruire des compteurs contradictoires.
+
+### Inventaire des systèmes d'exploitation des VM
+
+L'outil `inventaire_os_proxmox` complète `etat_proxmox` en collectant les informations du système d'exploitation des machines virtuelles QEMU en fonctionnement.
+
+Il utilise l'API Proxmox VE et le **QEMU Guest Agent** de chaque VM. Les informations collectées comprennent :
+
+- le nom de la VM, son identifiant et son nœud Proxmox ;
+- le nom du système d'exploitation ;
+- sa version et son identifiant de version, lorsqu'ils sont disponibles ;
+- la version du noyau, lorsqu'elle est disponible ;
+- l'état de la collecte.
+
+L'outil fonctionne en lecture seule. Si l'agent invité ne répond pas, si les informations sont invalides ou si l'OS ne peut pas être identifié, le résultat indique un état de collecte approprié.
+
+**Limites actuelles :**
+
+- seules les VM QEMU en fonctionnement sont prises en compte ;
+- les conteneurs LXC ne sont pas couverts par cet outil ;
+- la collecte des informations OS ne constitue pas une détection de vulnérabilités ;
+- la collecte et la corrélation des CVE avec les versions inventoriées restent à développer.
 
 ### Configuration de l'accès
 
@@ -763,6 +785,8 @@ La sécurité doit reposer sur des contrôles effectifs :
 - [x] Ajouter l'outil Proxmox en lecture seule.
 - [x] Calculer les compteurs de machines par type et par état.
 - [x] Déclarer l'outil Proxmox dans le catalogue TypeScript.
+- [x] Ajouter l'inventaire des systèmes d'exploitation des VM QEMU via le QEMU Guest Agent.
+- [x] Déclarer l'outil d'inventaire OS dans les catalogues Python et TypeScript.
 - [ ] Finaliser et valider la documentation Proxmox.
 - [ ] Ajouter des tests explicites pour les erreurs Proxmox : connexion, authentification, permissions et réponses invalides.
 - [ ] Ajouter des outils réseau.
@@ -890,6 +914,8 @@ LabPilot possède un premier socle fonctionnel comprenant :
 - des outils de supervision du système, du GPU et d'Ollama ;
 - une intégration Home Assistant en lecture seule ;
 - une intégration Proxmox en lecture seule ;
+- un inventaire des systèmes d'exploitation des VM QEMU via le QEMU Guest Agent ;
+- une collecte des informations OS en lecture seule, préparant le futur rapprochement avec les CVE ;
 - des tests unitaires Python et TypeScript.
 
 L'interprétation du modèle peut rester imparfaite. Les informations techniques doivent être vérifiées à partir des résultats structurés des outils.

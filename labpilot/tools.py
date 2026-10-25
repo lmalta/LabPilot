@@ -4,6 +4,7 @@ import subprocess
 import math
 import json
 import ssl
+import urllib.error
 import urllib.request
 from datetime import datetime, timedelta
 from labpilot.configuration import (
@@ -323,6 +324,138 @@ def etat_proxmox() -> dict:
     }
 
 
+def inventaire_os_proxmox() -> dict:
+    """Collecte les informations OS des VM QEMU en fonctionnement, en lecture seule."""
+    if not all((PROXMOX_URL, PROXMOX_TOKEN_ID, PROXMOX_TOKEN_SECRET)):
+        raise RuntimeError("La configuration Proxmox est absente.")
+
+    if not os.path.isfile(PROXMOX_CA_FILE):
+        raise RuntimeError("Le certificat CA Proxmox est introuvable.")
+
+    contexte_tls = ssl.create_default_context(cafile=PROXMOX_CA_FILE)
+    base_url = PROXMOX_URL.rstrip("/")
+    en_tetes = {
+        "Authorization": (
+            f"PVEAPIToken={PROXMOX_TOKEN_ID}={PROXMOX_TOKEN_SECRET}"
+        ),
+        "Accept": "application/json",
+    }
+
+    def requete_proxmox(chemin: str) -> dict:
+        requete = urllib.request.Request(
+            f"{base_url}{chemin}",
+            headers=en_tetes,
+        )
+        with urllib.request.urlopen(
+            requete, timeout=10, context=contexte_tls
+        ) as reponse:
+            donnees = json.load(reponse)
+
+        if not isinstance(donnees, dict) or "data" not in donnees:
+            raise RuntimeError("Réponse Proxmox invalide.")
+
+        return donnees
+
+    try:
+        donnees = requete_proxmox("/api2/json/cluster/resources")
+    except Exception as erreur:
+        raise RuntimeError(
+            f"Impossible de consulter Proxmox ({type(erreur).__name__})."
+        ) from None
+
+    ressources = donnees["data"]
+    if not isinstance(ressources, list) or any(
+        not isinstance(ressource, dict) for ressource in ressources
+    ):
+        raise RuntimeError("Réponse Proxmox invalide : ressources incorrectes.")
+
+    machines = []
+
+    for ressource in ressources:
+        if (
+            ressource.get("type") != "qemu"
+            or ressource.get("status") != "running"
+        ):
+            continue
+
+        vmid = ressource.get("vmid")
+        noeud = ressource.get("node")
+        machine = {
+            "vmid": vmid,
+            "nom": ressource.get("name"),
+            "noeud": noeud,
+            "etat_collecte": "indisponible",
+            "nom_os": None,
+            "version_os": None,
+            "version_id_os": None,
+            "noyau": None,
+        }
+
+        if (
+            isinstance(vmid, bool)
+            or not isinstance(vmid, int)
+            or vmid <= 0
+            or not isinstance(noeud, str)
+            or not noeud
+            or any(
+                not (caractere.isascii() and (
+                    caractere.isalnum() or caractere in "_.-"
+                ))
+                for caractere in noeud
+            )
+        ):
+            machine["etat_collecte"] = "identifiants_invalides"
+            machines.append(machine)
+            continue
+
+        try:
+            informations = requete_proxmox(
+                f"/api2/json/nodes/{noeud}/qemu/{vmid}/agent/get-osinfo"
+            )
+            os_info = informations["data"]
+
+            if not isinstance(os_info, dict):
+                machine["etat_collecte"] = "reponse_os_invalide"
+            else:
+                machine.update({
+                    "nom_os": os_info.get("pretty-name") or os_info.get("name"),
+                    "version_os": os_info.get("version") or os_info.get("version-id"),
+                    "version_id_os": os_info.get("version-id"),
+                    "noyau": os_info.get("kernel-release"),
+                    "etat_collecte": (
+                        "collecte_ok"
+                        if os_info.get("name") or os_info.get("pretty-name")
+                        else "os_inconnu"
+                    ),
+                })
+        except urllib.error.HTTPError as erreur:
+            if erreur.code in (401, 403):
+                machine["etat_collecte"] = "erreur_api"
+            else:
+                machine["etat_collecte"] = "agent_indisponible"
+        except (urllib.error.URLError, TimeoutError, ConnectionError):
+            machine["etat_collecte"] = "agent_indisponible"
+        except (json.JSONDecodeError, RuntimeError):
+            machine["etat_collecte"] = "reponse_os_invalide"
+
+        machines.append(machine)
+
+    return {
+        "disponible": True,
+        "nombre_vm_qemu_en_fonctionnement": len(machines),
+        "nombre_os_identifies": sum(
+            machine["etat_collecte"] == "collecte_ok"
+            for machine in machines
+        ),
+        "machines": sorted(
+            machines,
+            key=lambda machine: (
+                machine["noeud"] or "",
+                machine["vmid"] if isinstance(machine["vmid"], int) else 0,
+            ),
+        ),
+    }
+
 OUTILS = {
     "heure_actuelle": heure_actuelle,
     "heure_dans": heure_dans,
@@ -331,6 +464,7 @@ OUTILS = {
     "etat_ollama": etat_ollama,
     "etat_home_assistant": etat_home_assistant,
     "etat_proxmox": etat_proxmox,
+    "inventaire_os_proxmox": inventaire_os_proxmox,
 }
 
 DEFINITIONS_OUTILS = [
@@ -438,4 +572,23 @@ DEFINITIONS_OUTILS = [
             },
         },
     },
+    {
+        "type": "function",
+        "function": {
+            "name": "inventaire_os_proxmox",
+            "description": (
+                "Collecte en lecture seule les informations du système "
+                "d'exploitation des VM QEMU en fonctionnement via leur "
+                "agent invité Proxmox. Une collecte peut être indisponible "
+                "si l'agent ne répond pas. Cet outil ne détecte pas les CVE "
+                "et ne couvre pas les conteneurs LXC."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {},
+                "required": [],
+            },
+        },
+    },
+
 ]

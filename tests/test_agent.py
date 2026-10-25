@@ -678,3 +678,189 @@ def test_etat_proxmox_cpu_nan():
 
     assert resultat["erreur"] == "RuntimeError"
     assert "cpu" in resultat["message"]
+
+def test_inventaire_os_proxmox_recupere_os_vm():
+    from labpilot.tools import inventaire_os_proxmox
+
+    ressources = {
+        "data": [
+            {
+                "type": "qemu",
+                "vmid": 300,
+                "name": "haos18-2",
+                "node": "pve1",
+                "status": "running",
+            },
+            {
+                "type": "qemu",
+                "vmid": 301,
+                "name": "vm-arretee",
+                "node": "pve1",
+                "status": "stopped",
+            },
+            {
+                "type": "lxc",
+                "vmid": 200,
+                "name": "conteneur-test",
+                "node": "pve1",
+                "status": "running",
+            },
+        ]
+    }
+    informations_os = {
+        "data": {
+            "id": "debian",
+            "name": "Debian GNU/Linux",
+            "pretty-name": "Debian GNU/Linux 12 (bookworm)",
+            "version-id": "12",
+            "kernel-release": "6.8.12",
+        }
+    }
+
+    reponse_ressources = type(
+        "Reponse",
+        (),
+        {"__enter__": lambda self: self, "__exit__": lambda *args: None},
+    )()
+    reponse_os = type(
+        "Reponse",
+        (),
+        {"__enter__": lambda self: self, "__exit__": lambda *args: None},
+    )()
+
+    with (
+        patch("labpilot.tools.PROXMOX_URL", "https://proxmox-test:8006"),
+        patch("labpilot.tools.PROXMOX_TOKEN_ID", "test@pve!readonly"),
+        patch("labpilot.tools.PROXMOX_TOKEN_SECRET", "secret-fictif"),
+        patch("labpilot.tools.os.path.isfile", return_value=True),
+        patch("labpilot.tools.ssl.create_default_context"),
+        patch(
+            "labpilot.tools.urllib.request.urlopen",
+            side_effect=[reponse_ressources, reponse_os],
+        ) as urlopen,
+        patch(
+            "labpilot.tools.json.load",
+            side_effect=[ressources, informations_os],
+        ),
+    ):
+        resultat = inventaire_os_proxmox()
+
+    assert resultat["machines"][0]["vmid"] == 300
+    assert resultat["machines"][0]["nom_os"] == "Debian GNU/Linux 12 (bookworm)"
+    assert resultat["machines"][0]["version_os"] == "12"
+    assert len(resultat["machines"]) == 1
+    assert urlopen.call_count == 2
+
+
+
+def test_inventaire_os_proxmox_continue_si_agent_indisponible():
+    from urllib.error import URLError
+    from labpilot.tools import inventaire_os_proxmox
+
+    ressources = {
+        "data": [
+            {
+                "type": "qemu",
+                "vmid": 300,
+                "name": "haos18-2",
+                "node": "pve1",
+                "status": "running",
+            },
+            {
+                "type": "qemu",
+                "vmid": 302,
+                "name": "vm-linux",
+                "node": "pve1",
+                "status": "running",
+            },
+        ]
+    }
+    informations_os = {
+        "data": {
+            "name": "Ubuntu",
+            "pretty-name": "Ubuntu 24.04 LTS",
+            "version-id": "24.04",
+            "kernel-release": "6.8.0",
+        }
+    }
+
+    reponse = type(
+        "Reponse",
+        (),
+        {"__enter__": lambda self: self, "__exit__": lambda *args: None},
+    )()
+
+    with (
+        patch("labpilot.tools.PROXMOX_URL", "https://proxmox-test:8006"),
+        patch("labpilot.tools.PROXMOX_TOKEN_ID", "test@pve!readonly"),
+        patch("labpilot.tools.PROXMOX_TOKEN_SECRET", "secret-fictif"),
+        patch("labpilot.tools.os.path.isfile", return_value=True),
+        patch("labpilot.tools.ssl.create_default_context"),
+        patch(
+            "labpilot.tools.urllib.request.urlopen",
+            side_effect=[reponse, URLError("agent indisponible"), reponse],
+        ),
+        patch(
+            "labpilot.tools.json.load",
+            side_effect=[ressources, informations_os],
+        ),
+    ):
+        resultat = inventaire_os_proxmox()
+
+    machines = {machine["vmid"]: machine for machine in resultat["machines"]}
+
+    assert machines[300]["etat_collecte"] == "agent_indisponible"
+    assert machines[300]["nom_os"] is None
+    assert machines[302]["etat_collecte"] == "collecte_ok"
+    assert machines[302]["nom_os"] == "Ubuntu 24.04 LTS"
+    assert resultat["nombre_os_identifies"] == 1
+
+def test_inventaire_os_proxmox_authentification_refusee():
+    from urllib.error import HTTPError
+    from labpilot.tools import inventaire_os_proxmox
+
+    ressources = {
+        "data": [
+            {
+                "type": "qemu",
+                "vmid": 300,
+                "name": "vm-test",
+                "node": "pve1",
+                "status": "running",
+            }
+        ]
+    }
+
+    reponse = type(
+        "Reponse",
+        (),
+        {"__enter__": lambda self: self, "__exit__": lambda *args: None},
+    )()
+
+    with (
+        patch("labpilot.tools.PROXMOX_URL", "https://proxmox-test:8006"),
+        patch("labpilot.tools.PROXMOX_TOKEN_ID", "test@pve!readonly"),
+        patch("labpilot.tools.PROXMOX_TOKEN_SECRET", "secret-fictif"),
+        patch("labpilot.tools.os.path.isfile", return_value=True),
+        patch("labpilot.tools.ssl.create_default_context"),
+        patch(
+            "labpilot.tools.urllib.request.urlopen",
+            side_effect=[
+                reponse,
+                HTTPError(
+                    "https://proxmox-test:8006/api2/json/nodes/pve1/qemu/300/agent/get-osinfo",
+                    401,
+                    "Unauthorized secret-fictif",
+                    {},
+                    None,
+                ),
+            ],
+        ),
+        patch(
+            "labpilot.tools.json.load",
+            return_value=ressources,
+        ),
+    ):
+        resultat = inventaire_os_proxmox()
+
+    assert resultat["machines"][0]["etat_collecte"] == "erreur_api"
