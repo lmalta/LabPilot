@@ -4,7 +4,13 @@ from unittest.mock import patch
 from labpilot.agent import Agent, MAX_CYCLES_OUTILS, executer_outil
 from labpilot.tools import etat_gpu, etat_ollama, etat_home_assistant
 from labpilot.tools import etat_proxmox, DEFINITIONS_OUTILS, audit_cve_proxmox, OUTILS
-
+from labpilot.security_connectors import (
+    CONNECTEURS_SECURITE,
+    connecteur_disponible,
+    executer_connecteur_securite,
+    identifier_systeme,
+    ConnecteurSecurite,
+)
 
 def test_creation_agent():
     agent = Agent()
@@ -1238,7 +1244,7 @@ def test_audit_cve_proxmox_recherche_cve_pour_os_identifie():
     assert resultat["machines"][0]["cve"][0]["id"] == "CVE-2025-12345"
     machine = resultat["machines"][0]
     assert machine["source_cve"] == "NVD"
-    assert machine["etat_audit_cve"] == "terminee"
+    assert machine["etat_audit_cve"] == "recherche_nvd_terminee"
 
     normalise = machine["resultat_cve_normalise"]
     assert normalise["disponible"] is True
@@ -1248,6 +1254,9 @@ def test_audit_cve_proxmox_recherche_cve_pour_os_identifie():
     assert normalise["resultats"][0]["identifiant"] == "CVE-2025-12345"
     assert normalise["resultats"][0]["statut"] == "candidate"
     assert normalise["resultats"][0]["versions_affectees"] == []
+    assert resultat["nombre_recherches_nvd_terminees"] == 1
+    assert resultat["nombre_connecteurs_securite_termines"] == 0
+    assert resultat["nombre_machines_auditees"] == 0
 
 
 def test_audit_cve_proxmox_continue_apres_erreur_nvd():
@@ -1307,9 +1316,9 @@ def test_audit_cve_proxmox_continue_apres_erreur_nvd():
 
     assert rechercher_cve_mock.call_count == 2
     assert resultat["disponible"] is True
-    assert resultat["nombre_machines_auditees"] == 1
+    assert resultat["nombre_machines_auditees"] == 0
     assert resultat["machines"][0]["etat_audit_cve"] == "erreur_recherche_cve"
-    assert resultat["machines"][1]["etat_audit_cve"] == "terminee"
+    assert resultat["machines"][1]["etat_audit_cve"] == "recherche_nvd_terminee"
     assert resultat["machines"][1]["cve"][0]["id"] == "CVE-2025-12345"
     normalise_erreur = resultat["machines"][0]["resultat_cve_normalise"]
     assert normalise_erreur["disponible"] is False
@@ -1800,3 +1809,229 @@ def test_audit_cve_proxmox_normalise_erreur_nvd_non_textuelle():
         machine["resultat_cve_normalise"]["erreur"]
         == "reponse_indisponible"
     )
+
+
+def test_identifier_systeme_debian():
+    systeme = identifier_systeme("Debian GNU/Linux", "13", "6.12.107")
+
+    assert systeme.famille == "linux"
+    assert systeme.produit == "Debian"
+    assert systeme.version == "13"
+    assert systeme.connecteur == "debian"
+
+
+def test_identifier_systeme_windows_server():
+    systeme = identifier_systeme("Microsoft Windows Server 2022", "21H2")
+
+    assert systeme.famille == "windows"
+    assert systeme.produit == "Microsoft Windows Server 2022"
+    assert systeme.connecteur is None
+
+
+def test_identifier_systeme_truenas():
+    systeme = identifier_systeme(
+        "Debian GNU/Linux",
+        "12",
+        "6.12.105-production+truenas",
+        "truenas",
+    )
+
+    assert systeme.produit == "TrueNAS"
+    assert systeme.connecteur == "truenas"
+
+
+def test_identifier_systeme_inconnu():
+    systeme = identifier_systeme("Distribution Exemple", "1.0")
+
+    assert systeme.produit == "Distribution Exemple"
+    assert systeme.connecteur is None
+
+
+def test_connecteur_absent_non_disponible():
+    systeme = identifier_systeme("Microsoft Windows Server 2022", "21H2")
+
+    assert systeme.connecteur is None
+    assert connecteur_disponible(systeme) is False
+
+
+def test_connecteur_disponible_si_enregistre(monkeypatch):
+    def faux_connecteur():
+        pass
+
+    monkeypatch.setitem(
+        CONNECTEURS_SECURITE,
+        "debian",
+        faux_connecteur,
+    )
+
+    systeme = identifier_systeme("Debian GNU/Linux", "13")
+
+    assert connecteur_disponible(systeme) is True
+
+
+def test_audit_cve_proxmox_conserve_windows_sans_connecteur():
+    inventaire = {
+        "disponible": True,
+        "machines": [
+            {
+                "vmid": 500,
+                "nom": "windows-server",
+                "etat_collecte": "collecte_ok",
+                "nom_os": "Microsoft Windows Server 2022",
+                "version_os": "Microsoft Windows Server 2022",
+                "version_id_os": "21H2",
+                "noyau": "10.0.20348",
+            }
+        ],
+    }
+
+    with (
+        patch(
+            "labpilot.tools.inventaire_os_proxmox",
+            return_value=inventaire,
+        ),
+        patch("labpilot.tools.rechercher_cve") as rechercher_cve_mock,
+    ):
+        resultat = audit_cve_proxmox()
+
+    rechercher_cve_mock.assert_not_called()
+
+    assert resultat["disponible"] is True
+    assert len(resultat["machines"]) == 1
+
+    machine = resultat["machines"][0]
+    assert machine["vmid"] == 500
+    assert machine["cve"] == []
+    assert machine["resultat_cve_normalise"] is None
+    assert machine["etat_audit_cve"] != "terminee"
+
+
+def test_contrat_connecteur_securite_accepte_un_connecteur_callable():
+    def connecteur(systeme):
+        return {
+            "produit": systeme.produit,
+            "version_detectee": systeme.version or "inconnue",
+            "source": "test",
+            "disponible": False,
+            "erreur": "source_indisponible",
+            "resultats": [],
+        }
+
+    contrat: ConnecteurSecurite = connecteur
+    systeme = identifier_systeme("Debian GNU/Linux", "13")
+
+    resultat = contrat(systeme)
+
+    assert resultat["produit"] == "Debian"
+    assert resultat["version_detectee"] == "13"
+    assert resultat["source"] == "test"
+    assert resultat["disponible"] is False
+    assert resultat["resultats"] == []
+
+
+def test_executer_connecteur_securite_appelle_le_connecteur(monkeypatch):
+    def faux_connecteur(systeme):
+        return {
+            "produit": systeme.produit,
+            "version_detectee": systeme.version or "inconnue",
+            "source": "test",
+            "disponible": True,
+            "erreur": None,
+            "resultats": [],
+        }
+
+    monkeypatch.setitem(CONNECTEURS_SECURITE, "debian", faux_connecteur)
+    systeme = identifier_systeme("Debian GNU/Linux", "13")
+
+    resultat = executer_connecteur_securite(systeme)
+
+    assert resultat["disponible"] is True
+    assert resultat["produit"] == "Debian"
+    assert resultat["source"] == "test"
+
+
+def test_executer_connecteur_securite_gere_connecteur_absent():
+    systeme = identifier_systeme("Debian GNU/Linux", "13")
+
+    resultat = executer_connecteur_securite(systeme)
+
+    assert resultat["disponible"] is False
+    assert resultat["erreur"] == "connecteur_indisponible"
+    assert resultat["resultats"] == []
+
+
+def test_executer_connecteur_securite_gere_exception(monkeypatch):
+    def connecteur_en_erreur(systeme):
+        raise RuntimeError("détail interne")
+
+    monkeypatch.setitem(
+        CONNECTEURS_SECURITE,
+        "debian",
+        connecteur_en_erreur,
+    )
+    systeme = identifier_systeme("Debian GNU/Linux", "13")
+
+    resultat = executer_connecteur_securite(systeme)
+
+    assert resultat["disponible"] is False
+    assert resultat["erreur"] == "erreur_execution_connecteur"
+    assert resultat["resultats"] == []
+
+
+
+def test_audit_cve_proxmox_priorise_connecteur_enregistre(monkeypatch):
+    from labpilot.tools import audit_cve_proxmox
+
+    inventaire = {
+        "disponible": True,
+        "machines": [
+            {
+                "vmid": 101,
+                "nom": "vm-debian",
+                "etat_collecte": "collecte_ok",
+                "nom_os": "Debian GNU/Linux",
+                "version_os": "Debian GNU/Linux 13",
+                "version_id_os": "13",
+                "noyau": "6.12.0",
+            }
+        ],
+    }
+
+    appels = []
+
+    def faux_connecteur(systeme):
+        appels.append(systeme)
+        return {
+            "produit": systeme.produit,
+            "version_detectee": systeme.version or "inconnue",
+            "source": "connecteur_test",
+            "disponible": True,
+            "erreur": None,
+            "resultats": [],
+        }
+
+    monkeypatch.setitem(
+        CONNECTEURS_SECURITE,
+        "debian",
+        faux_connecteur,
+    )
+
+    with (
+        patch(
+            "labpilot.tools.inventaire_os_proxmox",
+            return_value=inventaire,
+        ),
+        patch("labpilot.tools.rechercher_cve") as recherche_nvd,
+    ):
+        resultat = audit_cve_proxmox()
+
+    recherche_nvd.assert_not_called()
+    assert len(appels) == 1
+    assert appels[0].produit == "Debian"
+
+    machine = resultat["machines"][0]
+    assert machine["resultat_cve_normalise"]["source"] == "connecteur_test"
+    assert machine["resultat_cve_normalise"]["disponible"] is True
+    assert resultat["nombre_connecteurs_securite_termines"] == 1
+    assert resultat["nombre_recherches_nvd_terminees"] == 0
+    assert resultat["nombre_machines_auditees"] == 0
