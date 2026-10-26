@@ -1139,6 +1139,7 @@ def test_rechercher_cve_reponse_nvd_malformee(donnees):
     assert resultat["erreur"] == "reponse_json_invalide"
     assert resultat["cve"] == []
 
+
 def test_audit_cve_proxmox_rejette_inventaire_mal_forme(monkeypatch):
     monkeypatch.setattr(
         "labpilot.tools.inventaire_os_proxmox",
@@ -1230,6 +1231,7 @@ def test_audit_cve_proxmox_recherche_cve_pour_os_identifie():
     assert resultat["machines"][0]["vmid"] == 100
     assert resultat["machines"][0]["cve"][0]["id"] == "CVE-2025-12345"
 
+
 def test_audit_cve_proxmox_continue_apres_erreur_nvd():
     inventaire = {
         "disponible": True,
@@ -1292,6 +1294,7 @@ def test_audit_cve_proxmox_continue_apres_erreur_nvd():
     assert resultat["machines"][1]["etat_audit_cve"] == "terminee"
     assert resultat["machines"][1]["cve"][0]["id"] == "CVE-2025-12345"
 
+
 def test_audit_cve_proxmox_gere_indisponibilite_proxmox():
     with patch(
         "labpilot.tools.inventaire_os_proxmox",
@@ -1303,6 +1306,7 @@ def test_audit_cve_proxmox_gere_indisponibilite_proxmox():
     assert resultat["erreur"] == "inventaire_proxmox_indisponible"
     assert resultat["machines"] == []
 
+
 def test_audit_cve_proxmox_rejette_limite_invalide():
     with patch("labpilot.tools.inventaire_os_proxmox") as inventaire_mock:
         resultat = audit_cve_proxmox(limite_par_machine=0)
@@ -1311,6 +1315,7 @@ def test_audit_cve_proxmox_rejette_limite_invalide():
     assert resultat["erreur"] == "limite_par_machine_invalide"
     assert resultat["machines"] == []
     inventaire_mock.assert_not_called()
+
 
 def test_audit_cve_proxmox_ignore_os_non_identifie():
     inventaire = {
@@ -1361,6 +1366,7 @@ def test_audit_cve_proxmox_est_enregistre_comme_outil():
     assert len(definitions) == 1
     assert "limite_par_machine" in definitions[0]["parameters"]["properties"]
 
+
 def test_audit_cve_proxmox_ignore_truenas_sans_version_produit():
     with (
         patch(
@@ -1389,4 +1395,35 @@ def test_audit_cve_proxmox_ignore_truenas_sans_version_produit():
     assert machine["produit_cve"] == "TrueNAS"
     assert machine["etat_audit_cve"] == "ignoree_version_produit_inconnue"
     assert "Debian" in machine["motif_audit_cve"]
+    assert machine["cve"] == []
+
+
+def test_audit_cve_proxmox_ignore_home_assistant_os_sans_source_dediee():
+    with (
+        patch(
+            "labpilot.tools.inventaire_os_proxmox",
+            return_value={
+                "disponible": True,
+                "machines": [
+                    {
+                        "vmid": 300,
+                        "nom": "haos18-2",
+                        "etat_collecte": "collecte_ok",
+                        "nom_os": "Home Assistant OS 18.2",
+                        "version_os": "18.2",
+                        "version_id_os": "18.2",
+                        "noyau": "6.18.39-haos",
+                    }
+                ],
+            },
+        ),
+        patch("labpilot.tools.rechercher_cve") as rechercher_cve_mock,
+    ):
+        resultat = audit_cve_proxmox()
+
+    machine = resultat["machines"][0]
+    rechercher_cve_mock.assert_not_called()
+    assert machine["produit_cve"] == "Home Assistant OS"
+    assert machine["version_produit_cve"] == "18.2"
+    assert machine["etat_audit_cve"] == "ignoree_source_produit_non_integree"
     assert machine["cve"] == []

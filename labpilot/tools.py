@@ -663,6 +663,30 @@ def audit_cve_proxmox(limite_par_machine: int = 20) -> dict:
             machines_auditees.append(resultat_machine)
             continue
 
+        home_assistant_os_detecte = (
+            "home assistant os" in nom_os.casefold()
+            or (
+                isinstance(noyau, str)
+                and noyau.casefold().endswith("-haos")
+            )
+        )
+
+        if home_assistant_os_detecte:
+            resultat_machine["produit_cve"] = "Home Assistant OS"
+            resultat_machine["version_produit_cve"] = (
+                machine.get("version_id_os")
+                or machine.get("version_os")
+            )
+            resultat_machine["etat_audit_cve"] = (
+                "ignoree_source_produit_non_integree"
+            )
+            resultat_machine["motif_audit_cve"] = (
+                "Home Assistant OS est identifié, mais une source d'avis "
+                "de sécurité adaptée à ce produit n'est pas encore intégrée."
+            )
+            machines_auditees.append(resultat_machine)
+            continue
+
         version = machine.get("version_id_os") or machine.get("version_os")
         if not isinstance(version, str) or not version.strip():
             resultat_machine["etat_audit_cve"] = "ignoree_version_inconnue"
