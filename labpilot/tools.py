@@ -413,14 +413,19 @@ def inventaire_os_proxmox() -> dict:
             informations = requete_proxmox(
                 f"/api2/json/nodes/{noeud}/qemu/{vmid}/agent/get-osinfo"
             )
-            os_info = informations["data"]
+            donnees_os = informations["data"]
+            os_info = (
+                donnees_os.get("result", donnees_os)
+                if isinstance(donnees_os, dict)
+                else donnees_os
+            )
 
             if not isinstance(os_info, dict):
                 machine["etat_collecte"] = "reponse_os_invalide"
             else:
                 machine.update({
                     "nom_os": os_info.get("pretty-name") or os_info.get("name"),
-                    "version_os": os_info.get("version") or os_info.get("version-id"),
+                    "version_os": os_info.get("version-id") or os_info.get("version"),
                     "version_id_os": os_info.get("version-id"),
                     "noyau": os_info.get("kernel-release"),
                     "etat_collecte": (
