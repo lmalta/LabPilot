@@ -22,6 +22,223 @@ PROXMOX_CA_FILE = os.path.join(
     "proxmox-root-ca.pem",
 )
 
+STATUTS_CVE_AUTORISES = frozenset({
+    "candidate",
+    "potentiellement_affectee",
+    "affectee_confirmee",
+    "non_affectee",
+    "correctif_disponible",
+    "verification_incomplete",
+})
+
+
+def valider_resultat_connecteur_cve(resultat: dict) -> bool:
+    """Valide la structure commune d'un résultat de connecteur CVE."""
+    if not isinstance(resultat, dict):
+        return False
+
+    if not all(
+        isinstance(resultat.get(cle), str) and resultat[cle].strip()
+        for cle in ("produit", "version_detectee", "source")
+    ):
+        return False
+
+    if not isinstance(resultat.get("disponible"), bool):
+        return False
+
+    if resultat.get("erreur") is not None and not isinstance(
+        resultat["erreur"], str
+    ):
+        return False
+
+    if resultat["disponible"] and resultat["erreur"] is not None:
+        return False
+
+    resultats = resultat.get("resultats")
+    if not isinstance(resultats, list):
+        return False
+
+    if not resultat["disponible"] and not resultat["erreur"]:
+        return False
+
+    if not resultat["disponible"] and resultat["resultats"]:
+        return False
+
+    for avis in resultats:
+        if not isinstance(avis, dict):
+            return False
+
+        champs_obligatoires = {
+            "identifiant",
+            "versions_affectees",
+            "version_corrigee",
+            "statut",
+            "preuve",
+            "date_verification",
+        }
+        if not champs_obligatoires.issubset(avis):
+            return False
+
+        if not isinstance(avis.get("identifiant"), str) or not avis["identifiant"].strip():
+            return False
+
+        statut = avis.get("statut")
+        if not isinstance(statut, str) or statut not in STATUTS_CVE_AUTORISES:
+            return False
+
+        if not isinstance(avis.get("versions_affectees"), list):
+            return False
+
+        if any(not isinstance(version, str) for version in avis["versions_affectees"]):
+            return False
+
+        version_corrigee = avis.get("version_corrigee")
+        if version_corrigee is not None and not isinstance(version_corrigee, str):
+            return False
+
+        if not isinstance(avis.get("preuve"), list):
+            return False
+
+        if any(not isinstance(preuve, str) for preuve in avis["preuve"]):
+            return False
+
+        date_verification = avis["date_verification"]
+        if date_verification is not None and not isinstance(date_verification, str):
+            return False
+
+    return True
+
+
+
+def finaliser_resultat_connecteur_cve(
+    resultat: dict,
+    erreur_secours: str = "contrat_invalide",
+) -> dict:
+    """Garantit que le résultat respecte le contrat commun."""
+    if valider_resultat_connecteur_cve(resultat):
+        return resultat
+
+    if not isinstance(resultat, dict):
+        resultat = {}
+
+    produit = resultat.get("produit")
+    version = resultat.get("version_detectee")
+    source = resultat.get("source")
+
+    return {
+        "produit": produit.strip()
+        if isinstance(produit, str) and produit.strip()
+        else "inconnu",
+        "version_detectee": version.strip()
+        if isinstance(version, str) and version.strip()
+        else "inconnue",
+        "source": source.strip()
+        if isinstance(source, str) and source.strip()
+        else "NVD",
+        "disponible": False,
+        "erreur": (
+            erreur_secours
+            if isinstance(erreur_secours, str) and erreur_secours.strip()
+            else "contrat_invalide"
+        ),
+        "resultats": [],
+    }
+
+
+def adapter_resultat_nvd_cve(
+    resultat_nvd: dict,
+    produit: str,
+    version: str,
+) -> dict:
+    """Convertit une réponse NVD historique vers le contrat commun."""
+    if (
+        not isinstance(produit, str)
+        or not produit.strip()
+        or not isinstance(version, str)
+        or not version.strip()
+    ):
+        erreur_nvd = (
+            resultat_nvd.get("erreur")
+            if isinstance(resultat_nvd, dict)
+            else None
+        )
+        erreur = (
+            erreur_nvd.strip()
+            if isinstance(erreur_nvd, str) and erreur_nvd.strip()
+            else "parametres_invalides"
+        )
+
+        return finaliser_resultat_connecteur_cve(
+            {
+                "produit": produit,
+                "version_detectee": version,
+                "source": "NVD",
+                "disponible": False,
+                "erreur": erreur,
+                "resultats": [],
+            },
+            erreur_secours=erreur,
+        )
+
+    resultat = {
+        "produit": produit,
+        "version_detectee": version,
+        "source": "NVD",
+        "disponible": False,
+        "erreur": None,
+        "resultats": [],
+    }
+
+    if not isinstance(resultat_nvd, dict):
+        resultat["erreur"] = "reponse_invalide"
+        return finaliser_resultat_connecteur_cve(resultat)
+
+    if resultat_nvd.get("disponible") is not True:
+        erreur = resultat_nvd.get("erreur")
+        resultat["erreur"] = (
+            erreur.strip()
+            if isinstance(erreur, str) and erreur.strip()
+            else "source_indisponible"
+        )
+        return finaliser_resultat_connecteur_cve(resultat)
+
+    cves = resultat_nvd.get("cve")
+    if not isinstance(cves, list):
+        resultat["erreur"] = "reponse_invalide"
+        return finaliser_resultat_connecteur_cve(resultat)
+
+    avis_normalises = []
+    for cve in cves:
+        if not isinstance(cve, dict):
+            resultat["erreur"] = "reponse_invalide"
+            return finaliser_resultat_connecteur_cve(resultat)
+
+        identifiant = cve.get("id")
+        if not isinstance(identifiant, str) or not identifiant.strip():
+            resultat["erreur"] = "reponse_invalide"
+            return finaliser_resultat_connecteur_cve(resultat)
+
+        references = cve.get("references", [])
+        if not isinstance(references, list) or any(
+            not isinstance(reference, str) for reference in references
+        ):
+            resultat["erreur"] = "reponse_invalide"
+            return finaliser_resultat_connecteur_cve(resultat)
+
+        avis_normalises.append({
+            "identifiant": identifiant,
+            "versions_affectees": [],
+            "version_corrigee": None,
+            "statut": "candidate",
+            "preuve": references,
+            "date_verification": datetime.now().astimezone().date().isoformat(),
+        })
+
+    resultat["disponible"] = True
+    resultat["resultats"] = avis_normalises
+
+    return finaliser_resultat_connecteur_cve(resultat)
+
 
 def heure_actuelle() -> str:
     return datetime.now().astimezone().isoformat()
@@ -631,6 +848,7 @@ def audit_cve_proxmox(limite_par_machine: int = 20) -> dict:
     for machine in inventaire["machines"]:
         resultat_machine = dict(machine)
         resultat_machine["cve"] = []
+        resultat_machine["resultat_cve_normalise"] = None
         resultat_machine["etat_audit_cve"] = "ignoree_os_non_identifie"
 
         nom_os = machine.get("nom_os")
@@ -702,6 +920,16 @@ def audit_cve_proxmox(limite_par_machine: int = 20) -> dict:
         except Exception as erreur:
             resultat_machine["etat_audit_cve"] = "erreur_recherche_cve"
             resultat_machine["erreur_cve"] = type(erreur).__name__
+            resultat_machine["resultat_cve_normalise"] = (
+                finaliser_resultat_connecteur_cve({
+                    "produit": nom_os.strip(),
+                    "version_detectee": version.strip(),
+                    "source": "NVD",
+                    "disponible": False,
+                    "erreur": "erreur_recherche_cve",
+                    "resultats": [],
+                })
+            )
             machines_auditees.append(resultat_machine)
             continue
 
@@ -713,14 +941,35 @@ def audit_cve_proxmox(limite_par_machine: int = 20) -> dict:
         ):
             resultat_machine["etat_audit_cve"] = "erreur_recherche_cve"
             if isinstance(recherche, dict) and recherche.get("disponible") is not True:
-                resultat_machine["erreur_cve"] = recherche.get(
-                    "erreur", "reponse_indisponible"
+                erreur_nvd = recherche.get("erreur")
+                resultat_machine["erreur_cve"] = (
+                    erreur_nvd.strip()
+                    if isinstance(erreur_nvd, str) and erreur_nvd.strip()
+                    else "reponse_indisponible"
                 )
             else:
                 resultat_machine["erreur_cve"] = "reponse_invalide"
+
+            resultat_machine["resultat_cve_normalise"] = (
+                finaliser_resultat_connecteur_cve({
+                    "produit": nom_os.strip(),
+                    "version_detectee": version.strip(),
+                    "source": "NVD",
+                    "disponible": False,
+                    "erreur": resultat_machine["erreur_cve"],
+                    "resultats": [],
+                })
+            )
         else:
             resultat_machine["cve"] = recherche["cve"]
             resultat_machine["source_cve"] = recherche.get("source", "NVD")
+            resultat_machine["resultat_cve_normalise"] = (
+                adapter_resultat_nvd_cve(
+                    recherche,
+                    produit=nom_os.strip(),
+                    version=version.strip(),
+                )
+            )
             resultat_machine["avertissement_cve"] = recherche.get(
                 "avertissement",
                 "Les CVE candidates doivent être vérifiées avant toute conclusion.",

@@ -1180,6 +1180,12 @@ def test_audit_cve_proxmox_rejette_reponse_cve_mal_formee(monkeypatch):
     assert resultat["nombre_machines_auditees"] == 0
     assert resultat["machines"][0]["etat_audit_cve"] == "erreur_recherche_cve"
     assert resultat["machines"][0]["erreur_cve"] == "reponse_invalide"
+    normalise = resultat["machines"][0]["resultat_cve_normalise"]
+    assert normalise["disponible"] is False
+    assert normalise["erreur"] == "reponse_invalide"
+    assert normalise["produit"] == "Ubuntu"
+    assert normalise["version_detectee"] == "24.04"
+    assert normalise["resultats"] == []
 
 
 def test_audit_cve_proxmox_recherche_cve_pour_os_identifie():
@@ -1230,6 +1236,18 @@ def test_audit_cve_proxmox_recherche_cve_pour_os_identifie():
     assert len(resultat["machines"]) == 1
     assert resultat["machines"][0]["vmid"] == 100
     assert resultat["machines"][0]["cve"][0]["id"] == "CVE-2025-12345"
+    machine = resultat["machines"][0]
+    assert machine["source_cve"] == "NVD"
+    assert machine["etat_audit_cve"] == "terminee"
+
+    normalise = machine["resultat_cve_normalise"]
+    assert normalise["disponible"] is True
+    assert normalise["produit"] == "Ubuntu"
+    assert normalise["version_detectee"] == "24.04"
+    assert normalise["source"] == "NVD"
+    assert normalise["resultats"][0]["identifiant"] == "CVE-2025-12345"
+    assert normalise["resultats"][0]["statut"] == "candidate"
+    assert normalise["resultats"][0]["versions_affectees"] == []
 
 
 def test_audit_cve_proxmox_continue_apres_erreur_nvd():
@@ -1293,6 +1311,17 @@ def test_audit_cve_proxmox_continue_apres_erreur_nvd():
     assert resultat["machines"][0]["etat_audit_cve"] == "erreur_recherche_cve"
     assert resultat["machines"][1]["etat_audit_cve"] == "terminee"
     assert resultat["machines"][1]["cve"][0]["id"] == "CVE-2025-12345"
+    normalise_erreur = resultat["machines"][0]["resultat_cve_normalise"]
+    assert normalise_erreur["disponible"] is False
+    assert normalise_erreur["erreur"] == "erreur_recherche_cve"
+    assert normalise_erreur["resultats"] == []
+    assert normalise_erreur["produit"] == "Ubuntu"
+    assert normalise_erreur["version_detectee"] == "24.04"
+
+    normalise = resultat["machines"][1]["resultat_cve_normalise"]
+    assert normalise["disponible"] is True
+    assert normalise["resultats"][0]["identifiant"] == "CVE-2025-12345"
+    assert normalise["resultats"][0]["statut"] == "candidate"
 
 
 def test_audit_cve_proxmox_gere_indisponibilite_proxmox():
@@ -1396,6 +1425,7 @@ def test_audit_cve_proxmox_ignore_truenas_sans_version_produit():
     assert machine["etat_audit_cve"] == "ignoree_version_produit_inconnue"
     assert "Debian" in machine["motif_audit_cve"]
     assert machine["cve"] == []
+    assert machine["resultat_cve_normalise"] is None
 
 
 def test_audit_cve_proxmox_ignore_home_assistant_os_sans_source_dediee():
@@ -1427,3 +1457,305 @@ def test_audit_cve_proxmox_ignore_home_assistant_os_sans_source_dediee():
     assert machine["version_produit_cve"] == "18.2"
     assert machine["etat_audit_cve"] == "ignoree_source_produit_non_integree"
     assert machine["cve"] == []
+    assert machine["resultat_cve_normalise"] is None
+
+
+def test_statuts_cve_autorises():
+    from labpilot.tools import STATUTS_CVE_AUTORISES
+
+    assert STATUTS_CVE_AUTORISES == {
+        "candidate",
+        "potentiellement_affectee",
+        "affectee_confirmee",
+        "non_affectee",
+        "correctif_disponible",
+        "verification_incomplete",
+    }
+
+
+def test_valider_resultat_connecteur_cve_accepte_resultat_valide():
+    from labpilot.tools import valider_resultat_connecteur_cve
+
+    resultat = {
+        "produit": "Nextcloud",
+        "version_detectee": "35.0.2",
+        "source": "avis_securite_fournisseur",
+        "disponible": True,
+        "erreur": None,
+        "resultats": [
+            {
+                "identifiant": "CVE-2025-12345",
+                "versions_affectees": ["35.0.0 à 35.0.2"],
+                "version_corrigee": "35.0.3",
+                "statut": "candidate",
+                "preuve": ["https://example.com/advisory"],
+                "date_verification": "2026-10-26",
+            }
+        ],
+    }
+
+    assert valider_resultat_connecteur_cve(resultat) is True
+
+@pytest.mark.parametrize(
+    "modification",
+    [
+        {"produit": ""},
+        {"disponible": "oui"},
+        {"resultats": "aucun"},
+        {"resultats": None},
+        {
+            "resultats": [
+                {
+                    "identifiant": "CVE-2025-12345",
+                    "versions_affectees": [],
+                    "version_corrigee": None,
+                    "statut": "statut_inconnu",
+                    "preuve": [],
+                    "date_verification": None,
+                }
+            ]
+        },
+        {"source": ""},
+        {"erreur": 123},
+        {
+            "resultats": [
+                {
+                    "identifiant": "CVE-2025-12345",
+                    "versions_affectees": [],
+                    "version_corrigee": None,
+                    "statut": None,
+                    "preuve": [],
+                    "date_verification": None,
+                }
+            ]
+        },
+        {
+            "resultats": [
+                {
+                    "identifiant": "CVE-2025-12345",
+                    "versions_affectees": [],
+                    "version_corrigee": None,
+                    "statut": "candidate",
+                    "preuve": [],
+                }
+            ]
+        },
+    ],
+)
+def test_valider_resultat_connecteur_cve_rejette_resultat_invalide(
+    modification,
+):
+    from labpilot.tools import valider_resultat_connecteur_cve
+
+    resultat = {
+        "produit": "Nextcloud",
+        "version_detectee": "35.0.2",
+        "source": "avis_securite_fournisseur",
+        "disponible": True,
+        "erreur": None,
+        "resultats": [],
+    }
+    resultat.update(modification)
+
+    assert valider_resultat_connecteur_cve(resultat) is False
+
+def test_valider_resultat_connecteur_cve_accepte_source_indisponible():
+    from labpilot.tools import valider_resultat_connecteur_cve
+
+    resultat = {
+        "produit": "Debian",
+        "version_detectee": "13",
+        "source": "avis_securite_debian",
+        "disponible": False,
+        "erreur": "erreur_reseau",
+        "resultats": [],
+    }
+
+    assert valider_resultat_connecteur_cve(resultat) is True
+
+
+
+def test_adapter_resultat_nvd_cve_conserve_les_cve_comme_candidates():
+    from labpilot.tools import adapter_resultat_nvd_cve
+
+    resultat_nvd = {
+        "disponible": True,
+        "cve": [
+            {
+                "id": "CVE-2026-12345",
+                "references": ["https://example.org/advisory"],
+            }
+        ],
+    }
+
+    resultat = adapter_resultat_nvd_cve(
+        resultat_nvd,
+        "Nextcloud",
+        "35.0.2",
+    )
+
+    assert resultat["disponible"] is True
+    assert resultat["erreur"] is None
+    assert resultat["produit"] == "Nextcloud"
+    assert resultat["version_detectee"] == "35.0.2"
+    assert resultat["source"] == "NVD"
+    assert resultat["resultats"][0]["identifiant"] == "CVE-2026-12345"
+    assert resultat["resultats"][0]["statut"] == "candidate"
+    assert resultat["resultats"][0]["versions_affectees"] == []
+    assert resultat["resultats"][0]["version_corrigee"] is None
+    assert resultat["resultats"][0]["preuve"] == [
+        "https://example.org/advisory"
+    ]
+
+
+def test_adapter_resultat_nvd_cve_gere_une_source_indisponible():
+    from labpilot.tools import adapter_resultat_nvd_cve
+
+    resultat = adapter_resultat_nvd_cve(
+        {
+            "disponible": False,
+            "erreur": "erreur_reseau",
+            "cve": [],
+        },
+        "Debian",
+        "13",
+    )
+
+    assert resultat["disponible"] is False
+    assert resultat["erreur"] == "erreur_reseau"
+    assert resultat["resultats"] == []
+
+
+def test_adapter_resultat_nvd_cve_normalise_erreur_absente():
+    from labpilot.tools import (
+        adapter_resultat_nvd_cve,
+        valider_resultat_connecteur_cve,
+    )
+
+    resultat = adapter_resultat_nvd_cve(
+        {
+            "disponible": False,
+            "erreur": "",
+            "cve": [],
+        },
+        "Debian",
+        "13",
+    )
+
+    assert resultat["disponible"] is False
+    assert resultat["erreur"] == "source_indisponible"
+    assert resultat["resultats"] == []
+    assert valider_resultat_connecteur_cve(resultat) is True
+
+
+def test_adapter_resultat_nvd_cve_reponse_mal_formee():
+    from labpilot.tools import (
+        adapter_resultat_nvd_cve,
+        valider_resultat_connecteur_cve,
+    )
+
+    resultat = adapter_resultat_nvd_cve(
+        {"disponible": True, "cve": "format_invalide"},
+        "Debian",
+        "13",
+    )
+
+    assert resultat["disponible"] is False
+    assert resultat["erreur"] == "reponse_invalide"
+    assert resultat["resultats"] == []
+    assert valider_resultat_connecteur_cve(resultat) is True
+
+
+def test_adapter_resultat_nvd_cve_produit_vide():
+    from labpilot.tools import (
+        adapter_resultat_nvd_cve,
+        valider_resultat_connecteur_cve,
+    )
+
+    resultat = adapter_resultat_nvd_cve(
+        {"disponible": False, "erreur": "erreur_reseau"},
+        "",
+        "13",
+    )
+
+    assert resultat["disponible"] is False
+    assert resultat["erreur"] == "erreur_reseau"
+    assert resultat["produit"] == "inconnu"
+    assert valider_resultat_connecteur_cve(resultat) is True
+
+
+def test_adapter_resultat_nvd_cve_erreur_respecte_le_contrat():
+    from labpilot.tools import (
+        adapter_resultat_nvd_cve,
+        valider_resultat_connecteur_cve,
+    )
+
+    resultat = adapter_resultat_nvd_cve(
+        {"disponible": False, "erreur": "erreur_reseau"},
+        "Debian",
+        "13",
+    )
+
+    assert resultat["disponible"] is False
+    assert resultat["erreur"] == "erreur_reseau"
+    assert resultat["resultats"] == []
+    assert valider_resultat_connecteur_cve(resultat) is True
+
+
+def test_finaliser_resultat_connecteur_cve_champs_invalides():
+    from labpilot.tools import (
+        finaliser_resultat_connecteur_cve,
+        valider_resultat_connecteur_cve,
+    )
+
+    resultat = finaliser_resultat_connecteur_cve({
+        "produit": None,
+        "version_detectee": 13,
+        "source": [],
+        "disponible": False,
+        "erreur": "reponse_invalide",
+        "resultats": [],
+    })
+
+    assert resultat["disponible"] is False
+    assert resultat["erreur"] == "contrat_invalide"
+    assert valider_resultat_connecteur_cve(resultat) is True
+
+
+def test_audit_cve_proxmox_normalise_erreur_nvd_non_textuelle():
+    from unittest.mock import patch
+
+    inventaire = {
+        "disponible": True,
+        "machines": [
+            {
+                "vmid": 101,
+                "nom": "ubuntu-test",
+                "etat_collecte": "collecte_ok",
+                "nom_os": "Ubuntu",
+                "version_id_os": "24.04",
+            }
+        ],
+    }
+
+    with (
+        patch(
+            "labpilot.tools.inventaire_os_proxmox",
+            return_value=inventaire,
+        ),
+        patch(
+            "labpilot.tools.rechercher_cve",
+            return_value={
+                "disponible": False,
+                "erreur": 123,
+            },
+        ),
+    ):
+        resultat = audit_cve_proxmox()
+
+    machine = resultat["machines"][0]
+    assert machine["erreur_cve"] == "reponse_indisponible"
+    assert (
+        machine["resultat_cve_normalise"]["erreur"]
+        == "reponse_indisponible"
+    )
