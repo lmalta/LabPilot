@@ -15,12 +15,121 @@ from labpilot.configuration import (
     PROXMOX_TOKEN_ID,
     PROXMOX_TOKEN_SECRET,
 )
+from labpilot.security_connectors import (
+    identifier_systeme,
+    connecteur_disponible,
+    executer_connecteur_securite,
+)
+
+from labpilot.debian_security_connector import (
+    auditer_paquets_debian_proxmox,
+)
+
+from labpilot.security_contracts import (
+    STATUTS_CVE_AUTORISES,
+    valider_resultat_connecteur_cve,
+    finaliser_resultat_connecteur_cve,
+)
 
 PROXMOX_CA_FILE = os.path.join(
     os.path.dirname(os.path.dirname(__file__)),
     "certs",
     "proxmox-root-ca.pem",
 )
+
+def adapter_resultat_nvd_cve(
+    resultat_nvd: dict,
+    produit: str,
+    version: str,
+) -> dict:
+    """Convertit une réponse NVD historique vers le contrat commun."""
+    if (
+        not isinstance(produit, str)
+        or not produit.strip()
+        or not isinstance(version, str)
+        or not version.strip()
+    ):
+        erreur_nvd = (
+            resultat_nvd.get("erreur")
+            if isinstance(resultat_nvd, dict)
+            else None
+        )
+        erreur = (
+            erreur_nvd.strip()
+            if isinstance(erreur_nvd, str) and erreur_nvd.strip()
+            else "parametres_invalides"
+        )
+
+        return finaliser_resultat_connecteur_cve(
+            {
+                "produit": produit,
+                "version_detectee": version,
+                "source": "NVD",
+                "disponible": False,
+                "erreur": erreur,
+                "resultats": [],
+            },
+            erreur_secours=erreur,
+        )
+
+    resultat = {
+        "produit": produit,
+        "version_detectee": version,
+        "source": "NVD",
+        "disponible": False,
+        "erreur": None,
+        "resultats": [],
+    }
+
+    if not isinstance(resultat_nvd, dict):
+        resultat["erreur"] = "reponse_invalide"
+        return finaliser_resultat_connecteur_cve(resultat)
+
+    if resultat_nvd.get("disponible") is not True:
+        erreur = resultat_nvd.get("erreur")
+        resultat["erreur"] = (
+            erreur.strip()
+            if isinstance(erreur, str) and erreur.strip()
+            else "source_indisponible"
+        )
+        return finaliser_resultat_connecteur_cve(resultat)
+
+    cves = resultat_nvd.get("cve")
+    if not isinstance(cves, list):
+        resultat["erreur"] = "reponse_invalide"
+        return finaliser_resultat_connecteur_cve(resultat)
+
+    avis_normalises = []
+    for cve in cves:
+        if not isinstance(cve, dict):
+            resultat["erreur"] = "reponse_invalide"
+            return finaliser_resultat_connecteur_cve(resultat)
+
+        identifiant = cve.get("id")
+        if not isinstance(identifiant, str) or not identifiant.strip():
+            resultat["erreur"] = "reponse_invalide"
+            return finaliser_resultat_connecteur_cve(resultat)
+
+        references = cve.get("references", [])
+        if not isinstance(references, list) or any(
+            not isinstance(reference, str) for reference in references
+        ):
+            resultat["erreur"] = "reponse_invalide"
+            return finaliser_resultat_connecteur_cve(resultat)
+
+        avis_normalises.append({
+            "identifiant": identifiant,
+            "versions_affectees": [],
+            "version_corrigee": None,
+            "statut": "candidate",
+            "preuve": references,
+            "date_verification": datetime.now().astimezone().date().isoformat(),
+        })
+
+    resultat["disponible"] = True
+    resultat["resultats"] = avis_normalises
+
+    return finaliser_resultat_connecteur_cve(resultat)
 
 
 def heure_actuelle() -> str:
@@ -631,6 +740,7 @@ def audit_cve_proxmox(limite_par_machine: int = 20) -> dict:
     for machine in inventaire["machines"]:
         resultat_machine = dict(machine)
         resultat_machine["cve"] = []
+        resultat_machine["resultat_cve_normalise"] = None
         resultat_machine["etat_audit_cve"] = "ignoree_os_non_identifie"
 
         nom_os = machine.get("nom_os")
@@ -642,7 +752,151 @@ def audit_cve_proxmox(limite_par_machine: int = 20) -> dict:
             machines_auditees.append(resultat_machine)
             continue
 
+        noyau = machine.get("noyau")
+        nom_machine = machine.get("nom")
         version = machine.get("version_id_os") or machine.get("version_os")
+
+        systeme = identifier_systeme(
+            nom_os=nom_os,
+            version=version if isinstance(version, str) else None,
+            noyau=noyau,
+            nom_machine=nom_machine,
+        )
+
+        resultat_machine["famille_os"] = systeme.famille
+        resultat_machine["produit_os"] = systeme.produit
+        resultat_machine["version_os_detectee"] = systeme.version
+        resultat_machine["connecteur_securite"] = systeme.connecteur
+
+        if systeme.produit != "Système non identifié":
+            resultat_machine["produit_cve"] = systeme.produit
+
+        if systeme.produit == "Home Assistant OS":
+            resultat_machine["version_produit_cve"] = systeme.version
+
+        if systeme.produit == "TrueNAS":
+            resultat_machine["etat_audit_cve"] = (
+                "ignoree_version_produit_inconnue"
+            )
+            resultat_machine["motif_audit_cve"] = (
+                "Version réelle de TrueNAS inconnue ; "
+                "la version Debian sous-jacente n'est pas utilisée."
+            )
+            machines_auditees.append(resultat_machine)
+            continue
+
+        recherche_nvd_autorisee = systeme.produit in {
+            "Debian",
+            "Ubuntu",
+        }
+
+        if (
+            systeme.produit == "Debian"
+            and not connecteur_disponible(systeme)
+        ):
+            noeud = machine.get("noeud")
+            vmid = machine.get("vmid")
+
+            if (
+                not isinstance(noeud, str)
+                or not noeud.strip()
+                or isinstance(vmid, bool)
+                or not isinstance(vmid, int)
+                or vmid <= 0
+                or not isinstance(systeme.version, str)
+                or not systeme.version.strip()
+            ):
+                resultat_connecteur = finaliser_resultat_connecteur_cve({
+                    "produit": "Debian",
+                    "version_detectee": (
+                        systeme.version
+                        if isinstance(systeme.version, str)
+                        and systeme.version.strip()
+                        else "inconnue"
+                    ),
+                    "source": "Debian Security Tracker",
+                    "disponible": False,
+                    "erreur": "contexte_machine_invalide",
+                    "resultats": [],
+                })
+            else:
+                resultat_connecteur = auditer_paquets_debian_proxmox(
+                    noeud.strip(),
+                    vmid,
+                    systeme.version.strip(),
+                )
+
+            resultat_machine["resultat_cve_normalise"] = (
+                resultat_connecteur
+            )
+            resultat_machine["source_cve"] = resultat_connecteur["source"]
+
+            if resultat_connecteur["disponible"]:
+                resultat_machine["cve"] = [
+                    {
+                        "id": avis["identifiant"],
+                        "applicabilite": avis["statut"],
+                    }
+                    for avis in resultat_connecteur["resultats"][:limite_par_machine]
+                ]
+                resultat_machine["etat_audit_cve"] = (
+                    "connecteur_securite_termine"
+                )
+            else:
+                resultat_machine["etat_audit_cve"] = (
+                    "erreur_connecteur_securite"
+                )
+                resultat_machine["erreur_cve"] = (
+                    resultat_connecteur["erreur"]
+                )
+
+            machines_auditees.append(resultat_machine)
+            continue
+
+        if connecteur_disponible(systeme):
+            resultat_connecteur = executer_connecteur_securite(systeme)
+            resultat_machine["resultat_cve_normalise"] = (
+                resultat_connecteur
+            )
+            resultat_machine["source_cve"] = resultat_connecteur["source"]
+
+            if resultat_connecteur["disponible"]:
+                resultat_machine["cve"] = [
+                    {
+                        "id": avis["identifiant"],
+                        "applicabilite": avis["statut"],
+                    }
+                    for avis in resultat_connecteur["resultats"][:limite_par_machine]
+                ]
+                resultat_machine["etat_audit_cve"] = (
+                    "connecteur_securite_termine"
+                )
+            else:
+                resultat_machine["etat_audit_cve"] = (
+                    "erreur_connecteur_securite"
+                )
+                resultat_machine["erreur_cve"] = (
+                    resultat_connecteur["erreur"]
+                )
+
+            machines_auditees.append(resultat_machine)
+            continue
+
+        if (
+            not connecteur_disponible(systeme)
+            and not recherche_nvd_autorisee
+        ):
+            resultat_machine["etat_audit_cve"] = (
+                "ignoree_source_produit_non_integree"
+            )
+            resultat_machine["motif_audit_cve"] = (
+                f"Aucun connecteur de sécurité enregistré pour "
+                f"{systeme.produit}, et aucune recherche NVD "
+                "complémentaire n'est configurée pour ce produit."
+            )
+            machines_auditees.append(resultat_machine)
+            continue
+
         if not isinstance(version, str) or not version.strip():
             resultat_machine["etat_audit_cve"] = "ignoree_version_inconnue"
             machines_auditees.append(resultat_machine)
@@ -657,6 +911,16 @@ def audit_cve_proxmox(limite_par_machine: int = 20) -> dict:
         except Exception as erreur:
             resultat_machine["etat_audit_cve"] = "erreur_recherche_cve"
             resultat_machine["erreur_cve"] = type(erreur).__name__
+            resultat_machine["resultat_cve_normalise"] = (
+                finaliser_resultat_connecteur_cve({
+                    "produit": nom_os.strip(),
+                    "version_detectee": version.strip(),
+                    "source": "NVD",
+                    "disponible": False,
+                    "erreur": "erreur_recherche_cve",
+                    "resultats": [],
+                })
+            )
             machines_auditees.append(resultat_machine)
             continue
 
@@ -668,19 +932,40 @@ def audit_cve_proxmox(limite_par_machine: int = 20) -> dict:
         ):
             resultat_machine["etat_audit_cve"] = "erreur_recherche_cve"
             if isinstance(recherche, dict) and recherche.get("disponible") is not True:
-                resultat_machine["erreur_cve"] = recherche.get(
-                    "erreur", "reponse_indisponible"
+                erreur_nvd = recherche.get("erreur")
+                resultat_machine["erreur_cve"] = (
+                    erreur_nvd.strip()
+                    if isinstance(erreur_nvd, str) and erreur_nvd.strip()
+                    else "reponse_indisponible"
                 )
             else:
                 resultat_machine["erreur_cve"] = "reponse_invalide"
+
+            resultat_machine["resultat_cve_normalise"] = (
+                finaliser_resultat_connecteur_cve({
+                    "produit": nom_os.strip(),
+                    "version_detectee": version.strip(),
+                    "source": "NVD",
+                    "disponible": False,
+                    "erreur": resultat_machine["erreur_cve"],
+                    "resultats": [],
+                })
+            )
         else:
             resultat_machine["cve"] = recherche["cve"]
             resultat_machine["source_cve"] = recherche.get("source", "NVD")
+            resultat_machine["resultat_cve_normalise"] = (
+                adapter_resultat_nvd_cve(
+                    recherche,
+                    produit=nom_os.strip(),
+                    version=version.strip(),
+                )
+            )
             resultat_machine["avertissement_cve"] = recherche.get(
                 "avertissement",
                 "Les CVE candidates doivent être vérifiées avant toute conclusion.",
             )
-            resultat_machine["etat_audit_cve"] = "terminee"
+            resultat_machine["etat_audit_cve"] = "recherche_nvd_terminee"
 
         machines_auditees.append(resultat_machine)
 
@@ -691,6 +976,14 @@ def audit_cve_proxmox(limite_par_machine: int = 20) -> dict:
             machine["etat_audit_cve"] == "terminee"
             for machine in machines_auditees
         ),
+        "nombre_recherches_nvd_terminees": sum(
+            machine["etat_audit_cve"] == "recherche_nvd_terminee"
+            for machine in machines_auditees
+        ),
+        "nombre_connecteurs_securite_termines": sum(
+            machine["etat_audit_cve"] == "connecteur_securite_termine"
+            for machine in machines_auditees
+        ),
         "machines": machines_auditees,
         "avertissement": (
             "Les résultats NVD sont des CVE candidates issues d'une recherche "
@@ -698,6 +991,7 @@ def audit_cve_proxmox(limite_par_machine: int = 20) -> dict:
             "Vérifier les CPE, les versions affectées et les avis des fournisseurs."
         ),
     }
+
 
 OUTILS = {
     "heure_actuelle": heure_actuelle,

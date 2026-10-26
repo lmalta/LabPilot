@@ -4,7 +4,13 @@ from unittest.mock import patch
 from labpilot.agent import Agent, MAX_CYCLES_OUTILS, executer_outil
 from labpilot.tools import etat_gpu, etat_ollama, etat_home_assistant
 from labpilot.tools import etat_proxmox, DEFINITIONS_OUTILS, audit_cve_proxmox, OUTILS
-
+from labpilot.security_connectors import (
+    CONNECTEURS_SECURITE,
+    connecteur_disponible,
+    executer_connecteur_securite,
+    identifier_systeme,
+    ConnecteurSecurite,
+)
 
 def test_creation_agent():
     agent = Agent()
@@ -1139,6 +1145,7 @@ def test_rechercher_cve_reponse_nvd_malformee(donnees):
     assert resultat["erreur"] == "reponse_json_invalide"
     assert resultat["cve"] == []
 
+
 def test_audit_cve_proxmox_rejette_inventaire_mal_forme(monkeypatch):
     monkeypatch.setattr(
         "labpilot.tools.inventaire_os_proxmox",
@@ -1179,6 +1186,12 @@ def test_audit_cve_proxmox_rejette_reponse_cve_mal_formee(monkeypatch):
     assert resultat["nombre_machines_auditees"] == 0
     assert resultat["machines"][0]["etat_audit_cve"] == "erreur_recherche_cve"
     assert resultat["machines"][0]["erreur_cve"] == "reponse_invalide"
+    normalise = resultat["machines"][0]["resultat_cve_normalise"]
+    assert normalise["disponible"] is False
+    assert normalise["erreur"] == "reponse_invalide"
+    assert normalise["produit"] == "Ubuntu"
+    assert normalise["version_detectee"] == "24.04"
+    assert normalise["resultats"] == []
 
 
 def test_audit_cve_proxmox_recherche_cve_pour_os_identifie():
@@ -1229,6 +1242,22 @@ def test_audit_cve_proxmox_recherche_cve_pour_os_identifie():
     assert len(resultat["machines"]) == 1
     assert resultat["machines"][0]["vmid"] == 100
     assert resultat["machines"][0]["cve"][0]["id"] == "CVE-2025-12345"
+    machine = resultat["machines"][0]
+    assert machine["source_cve"] == "NVD"
+    assert machine["etat_audit_cve"] == "recherche_nvd_terminee"
+
+    normalise = machine["resultat_cve_normalise"]
+    assert normalise["disponible"] is True
+    assert normalise["produit"] == "Ubuntu"
+    assert normalise["version_detectee"] == "24.04"
+    assert normalise["source"] == "NVD"
+    assert normalise["resultats"][0]["identifiant"] == "CVE-2025-12345"
+    assert normalise["resultats"][0]["statut"] == "candidate"
+    assert normalise["resultats"][0]["versions_affectees"] == []
+    assert resultat["nombre_recherches_nvd_terminees"] == 1
+    assert resultat["nombre_connecteurs_securite_termines"] == 0
+    assert resultat["nombre_machines_auditees"] == 0
+
 
 def test_audit_cve_proxmox_continue_apres_erreur_nvd():
     inventaire = {
@@ -1265,6 +1294,17 @@ def test_audit_cve_proxmox_continue_apres_erreur_nvd():
             return_value=inventaire,
         ),
         patch(
+            "labpilot.tools.auditer_paquets_debian_proxmox",
+            return_value={
+                "produit": "Debian",
+                "version_detectee": "12",
+                "source": "Debian Security Tracker",
+                "disponible": True,
+                "erreur": None,
+                "resultats": [],
+            },
+        ),
+        patch(
             "labpilot.tools.rechercher_cve",
             side_effect=[
                 RuntimeError("NVD indisponible"),
@@ -1285,12 +1325,29 @@ def test_audit_cve_proxmox_continue_apres_erreur_nvd():
     ):
         resultat = audit_cve_proxmox()
 
-    assert rechercher_cve_mock.call_count == 2
+    assert rechercher_cve_mock.call_count == 1
     assert resultat["disponible"] is True
-    assert resultat["nombre_machines_auditees"] == 1
+    assert resultat["nombre_machines_auditees"] == 0
     assert resultat["machines"][0]["etat_audit_cve"] == "erreur_recherche_cve"
-    assert resultat["machines"][1]["etat_audit_cve"] == "terminee"
-    assert resultat["machines"][1]["cve"][0]["id"] == "CVE-2025-12345"
+    assert (
+        resultat["machines"][1]["etat_audit_cve"]
+        == "connecteur_securite_termine"
+    )
+    assert resultat["machines"][1]["source_cve"] == "Debian Security Tracker"
+    assert resultat["machines"][1]["cve"] == []
+
+    normalise = resultat["machines"][1]["resultat_cve_normalise"]
+    assert normalise["disponible"] is True
+    assert normalise["source"] == "Debian Security Tracker"
+    assert normalise["resultats"] == []
+
+    normalise_erreur = resultat["machines"][0]["resultat_cve_normalise"]
+    assert normalise_erreur["disponible"] is False
+    assert normalise_erreur["erreur"] == "erreur_recherche_cve"
+    assert normalise_erreur["resultats"] == []
+    assert normalise_erreur["produit"] == "Ubuntu"
+    assert normalise_erreur["version_detectee"] == "24.04"
+
 
 def test_audit_cve_proxmox_gere_indisponibilite_proxmox():
     with patch(
@@ -1303,6 +1360,7 @@ def test_audit_cve_proxmox_gere_indisponibilite_proxmox():
     assert resultat["erreur"] == "inventaire_proxmox_indisponible"
     assert resultat["machines"] == []
 
+
 def test_audit_cve_proxmox_rejette_limite_invalide():
     with patch("labpilot.tools.inventaire_os_proxmox") as inventaire_mock:
         resultat = audit_cve_proxmox(limite_par_machine=0)
@@ -1311,6 +1369,7 @@ def test_audit_cve_proxmox_rejette_limite_invalide():
     assert resultat["erreur"] == "limite_par_machine_invalide"
     assert resultat["machines"] == []
     inventaire_mock.assert_not_called()
+
 
 def test_audit_cve_proxmox_ignore_os_non_identifie():
     inventaire = {
@@ -1360,3 +1419,635 @@ def test_audit_cve_proxmox_est_enregistre_comme_outil():
 
     assert len(definitions) == 1
     assert "limite_par_machine" in definitions[0]["parameters"]["properties"]
+
+
+def test_audit_cve_proxmox_ignore_truenas_sans_version_produit():
+    with (
+        patch(
+            "labpilot.tools.inventaire_os_proxmox",
+            return_value={
+                "disponible": True,
+                "machines": [
+                    {
+                        "vmid": 400,
+                        "nom": "truenas",
+                        "etat_collecte": "collecte_ok",
+                        "nom_os": "Debian GNU/Linux",
+                        "version_os": "Debian GNU/Linux 12",
+                        "version_id_os": "12",
+                        "noyau": "6.12.105-production+truenas",
+                    }
+                ],
+            },
+        ),
+        patch("labpilot.tools.rechercher_cve") as rechercher_cve_mock,
+    ):
+        resultat = audit_cve_proxmox()
+
+    machine = resultat["machines"][0]
+    rechercher_cve_mock.assert_not_called()
+    assert machine["produit_cve"] == "TrueNAS"
+    assert machine["etat_audit_cve"] == "ignoree_version_produit_inconnue"
+    assert "Debian" in machine["motif_audit_cve"]
+    assert machine["cve"] == []
+    assert machine["resultat_cve_normalise"] is None
+
+
+def test_audit_cve_proxmox_ignore_home_assistant_os_sans_source_dediee():
+    with (
+        patch(
+            "labpilot.tools.inventaire_os_proxmox",
+            return_value={
+                "disponible": True,
+                "machines": [
+                    {
+                        "vmid": 300,
+                        "nom": "haos18-2",
+                        "etat_collecte": "collecte_ok",
+                        "nom_os": "Home Assistant OS 18.2",
+                        "version_os": "18.2",
+                        "version_id_os": "18.2",
+                        "noyau": "6.18.39-haos",
+                    }
+                ],
+            },
+        ),
+        patch("labpilot.tools.rechercher_cve") as rechercher_cve_mock,
+    ):
+        resultat = audit_cve_proxmox()
+
+    machine = resultat["machines"][0]
+    rechercher_cve_mock.assert_not_called()
+    assert machine["produit_cve"] == "Home Assistant OS"
+    assert machine["version_produit_cve"] == "18.2"
+    assert machine["etat_audit_cve"] == "ignoree_source_produit_non_integree"
+    assert machine["cve"] == []
+    assert machine["resultat_cve_normalise"] is None
+
+
+def test_statuts_cve_autorises():
+    from labpilot.tools import STATUTS_CVE_AUTORISES
+
+    assert STATUTS_CVE_AUTORISES == {
+        "candidate",
+        "potentiellement_affectee",
+        "affectee_confirmee",
+        "non_affectee",
+        "correctif_disponible",
+        "verification_incomplete",
+    }
+
+
+def test_valider_resultat_connecteur_cve_accepte_resultat_valide():
+    from labpilot.tools import valider_resultat_connecteur_cve
+
+    resultat = {
+        "produit": "Nextcloud",
+        "version_detectee": "35.0.2",
+        "source": "avis_securite_fournisseur",
+        "disponible": True,
+        "erreur": None,
+        "resultats": [
+            {
+                "identifiant": "CVE-2025-12345",
+                "versions_affectees": ["35.0.0 à 35.0.2"],
+                "version_corrigee": "35.0.3",
+                "statut": "candidate",
+                "preuve": ["https://example.com/advisory"],
+                "date_verification": "2026-10-26",
+            }
+        ],
+    }
+
+    assert valider_resultat_connecteur_cve(resultat) is True
+
+@pytest.mark.parametrize(
+    "modification",
+    [
+        {"produit": ""},
+        {"disponible": "oui"},
+        {"resultats": "aucun"},
+        {"resultats": None},
+        {
+            "resultats": [
+                {
+                    "identifiant": "CVE-2025-12345",
+                    "versions_affectees": [],
+                    "version_corrigee": None,
+                    "statut": "statut_inconnu",
+                    "preuve": [],
+                    "date_verification": None,
+                }
+            ]
+        },
+        {"source": ""},
+        {"erreur": 123},
+        {
+            "resultats": [
+                {
+                    "identifiant": "CVE-2025-12345",
+                    "versions_affectees": [],
+                    "version_corrigee": None,
+                    "statut": None,
+                    "preuve": [],
+                    "date_verification": None,
+                }
+            ]
+        },
+        {
+            "resultats": [
+                {
+                    "identifiant": "CVE-2025-12345",
+                    "versions_affectees": [],
+                    "version_corrigee": None,
+                    "statut": "candidate",
+                    "preuve": [],
+                }
+            ]
+        },
+                # Une vulnérabilité confirmée doit avoir des versions affectées
+        # et une preuve justificative.
+        {
+            "resultats": [
+                {
+                    "identifiant": "CVE-2025-12345",
+                    "versions_affectees": [],
+                    "version_corrigee": None,
+                    "statut": "affectee_confirmee",
+                    "preuve": [],
+                    "date_verification": "2026-10-26",
+                }
+            ]
+        },
+        # Un correctif annoncé doit préciser sa version corrigée
+        # et fournir une preuve.
+        {
+            "resultats": [
+                {
+                    "identifiant": "CVE-2025-12345",
+                    "versions_affectees": ["1.0 à 1.2"],
+                    "version_corrigee": None,
+                    "statut": "correctif_disponible",
+                    "preuve": ["https://example.org/advisory"],
+                    "date_verification": "2026-10-26",
+                }
+            ]
+        },
+        # Une non-applicabilité doit également être justifiée.
+        {
+            "resultats": [
+                {
+                    "identifiant": "CVE-2025-12345",
+                    "versions_affectees": [],
+                    "version_corrigee": None,
+                    "statut": "non_affectee",
+                    "preuve": [],
+                    "date_verification": "2026-10-26",
+                }
+            ]
+        },
+    ],
+)
+def test_valider_resultat_connecteur_cve_rejette_resultat_invalide(
+    modification,
+):
+    from labpilot.tools import valider_resultat_connecteur_cve
+
+    resultat = {
+        "produit": "Nextcloud",
+        "version_detectee": "35.0.2",
+        "source": "avis_securite_fournisseur",
+        "disponible": True,
+        "erreur": None,
+        "resultats": [],
+    }
+    resultat.update(modification)
+
+    assert valider_resultat_connecteur_cve(resultat) is False
+
+def test_valider_resultat_connecteur_cve_accepte_source_indisponible():
+    from labpilot.tools import valider_resultat_connecteur_cve
+
+    resultat = {
+        "produit": "Debian",
+        "version_detectee": "13",
+        "source": "avis_securite_debian",
+        "disponible": False,
+        "erreur": "erreur_reseau",
+        "resultats": [],
+    }
+
+    assert valider_resultat_connecteur_cve(resultat) is True
+
+
+
+def test_adapter_resultat_nvd_cve_conserve_les_cve_comme_candidates():
+    from labpilot.tools import adapter_resultat_nvd_cve
+
+    resultat_nvd = {
+        "disponible": True,
+        "cve": [
+            {
+                "id": "CVE-2026-12345",
+                "references": ["https://example.org/advisory"],
+            }
+        ],
+    }
+
+    resultat = adapter_resultat_nvd_cve(
+        resultat_nvd,
+        "Nextcloud",
+        "35.0.2",
+    )
+
+    assert resultat["disponible"] is True
+    assert resultat["erreur"] is None
+    assert resultat["produit"] == "Nextcloud"
+    assert resultat["version_detectee"] == "35.0.2"
+    assert resultat["source"] == "NVD"
+    assert resultat["resultats"][0]["identifiant"] == "CVE-2026-12345"
+    assert resultat["resultats"][0]["statut"] == "candidate"
+    assert resultat["resultats"][0]["versions_affectees"] == []
+    assert resultat["resultats"][0]["version_corrigee"] is None
+    assert resultat["resultats"][0]["preuve"] == [
+        "https://example.org/advisory"
+    ]
+
+
+def test_adapter_resultat_nvd_cve_gere_une_source_indisponible():
+    from labpilot.tools import adapter_resultat_nvd_cve
+
+    resultat = adapter_resultat_nvd_cve(
+        {
+            "disponible": False,
+            "erreur": "erreur_reseau",
+            "cve": [],
+        },
+        "Debian",
+        "13",
+    )
+
+    assert resultat["disponible"] is False
+    assert resultat["erreur"] == "erreur_reseau"
+    assert resultat["resultats"] == []
+
+
+def test_adapter_resultat_nvd_cve_normalise_erreur_absente():
+    from labpilot.tools import (
+        adapter_resultat_nvd_cve,
+        valider_resultat_connecteur_cve,
+    )
+
+    resultat = adapter_resultat_nvd_cve(
+        {
+            "disponible": False,
+            "erreur": "",
+            "cve": [],
+        },
+        "Debian",
+        "13",
+    )
+
+    assert resultat["disponible"] is False
+    assert resultat["erreur"] == "source_indisponible"
+    assert resultat["resultats"] == []
+    assert valider_resultat_connecteur_cve(resultat) is True
+
+
+def test_adapter_resultat_nvd_cve_reponse_mal_formee():
+    from labpilot.tools import (
+        adapter_resultat_nvd_cve,
+        valider_resultat_connecteur_cve,
+    )
+
+    resultat = adapter_resultat_nvd_cve(
+        {"disponible": True, "cve": "format_invalide"},
+        "Debian",
+        "13",
+    )
+
+    assert resultat["disponible"] is False
+    assert resultat["erreur"] == "reponse_invalide"
+    assert resultat["resultats"] == []
+    assert valider_resultat_connecteur_cve(resultat) is True
+
+
+def test_adapter_resultat_nvd_cve_produit_vide():
+    from labpilot.tools import (
+        adapter_resultat_nvd_cve,
+        valider_resultat_connecteur_cve,
+    )
+
+    resultat = adapter_resultat_nvd_cve(
+        {"disponible": False, "erreur": "erreur_reseau"},
+        "",
+        "13",
+    )
+
+    assert resultat["disponible"] is False
+    assert resultat["erreur"] == "erreur_reseau"
+    assert resultat["produit"] == "inconnu"
+    assert valider_resultat_connecteur_cve(resultat) is True
+
+
+def test_adapter_resultat_nvd_cve_erreur_respecte_le_contrat():
+    from labpilot.tools import (
+        adapter_resultat_nvd_cve,
+        valider_resultat_connecteur_cve,
+    )
+
+    resultat = adapter_resultat_nvd_cve(
+        {"disponible": False, "erreur": "erreur_reseau"},
+        "Debian",
+        "13",
+    )
+
+    assert resultat["disponible"] is False
+    assert resultat["erreur"] == "erreur_reseau"
+    assert resultat["resultats"] == []
+    assert valider_resultat_connecteur_cve(resultat) is True
+
+
+def test_finaliser_resultat_connecteur_cve_champs_invalides():
+    from labpilot.tools import (
+        finaliser_resultat_connecteur_cve,
+        valider_resultat_connecteur_cve,
+    )
+
+    resultat = finaliser_resultat_connecteur_cve({
+        "produit": None,
+        "version_detectee": 13,
+        "source": [],
+        "disponible": False,
+        "erreur": "reponse_invalide",
+        "resultats": [],
+    })
+
+    assert resultat["disponible"] is False
+    assert resultat["erreur"] == "contrat_invalide"
+    assert valider_resultat_connecteur_cve(resultat) is True
+
+
+def test_audit_cve_proxmox_normalise_erreur_nvd_non_textuelle():
+    from unittest.mock import patch
+
+    inventaire = {
+        "disponible": True,
+        "machines": [
+            {
+                "vmid": 101,
+                "nom": "ubuntu-test",
+                "etat_collecte": "collecte_ok",
+                "nom_os": "Ubuntu",
+                "version_id_os": "24.04",
+            }
+        ],
+    }
+
+    with (
+        patch(
+            "labpilot.tools.inventaire_os_proxmox",
+            return_value=inventaire,
+        ),
+        patch(
+            "labpilot.tools.rechercher_cve",
+            return_value={
+                "disponible": False,
+                "erreur": 123,
+            },
+        ),
+    ):
+        resultat = audit_cve_proxmox()
+
+    machine = resultat["machines"][0]
+    assert machine["erreur_cve"] == "reponse_indisponible"
+    assert (
+        machine["resultat_cve_normalise"]["erreur"]
+        == "reponse_indisponible"
+    )
+
+
+def test_identifier_systeme_debian():
+    systeme = identifier_systeme("Debian GNU/Linux", "13", "6.12.107")
+
+    assert systeme.famille == "linux"
+    assert systeme.produit == "Debian"
+    assert systeme.version == "13"
+    assert systeme.connecteur == "debian"
+
+
+def test_identifier_systeme_windows_server():
+    systeme = identifier_systeme("Microsoft Windows Server 2022", "21H2")
+
+    assert systeme.famille == "windows"
+    assert systeme.produit == "Microsoft Windows Server 2022"
+    assert systeme.connecteur is None
+
+
+def test_identifier_systeme_truenas():
+    systeme = identifier_systeme(
+        "Debian GNU/Linux",
+        "12",
+        "6.12.105-production+truenas",
+        "truenas",
+    )
+
+    assert systeme.produit == "TrueNAS"
+    assert systeme.connecteur == "truenas"
+
+
+def test_identifier_systeme_inconnu():
+    systeme = identifier_systeme("Distribution Exemple", "1.0")
+
+    assert systeme.produit == "Distribution Exemple"
+    assert systeme.connecteur is None
+
+
+def test_connecteur_absent_non_disponible():
+    systeme = identifier_systeme("Microsoft Windows Server 2022", "21H2")
+
+    assert systeme.connecteur is None
+    assert connecteur_disponible(systeme) is False
+
+
+def test_connecteur_disponible_si_enregistre(monkeypatch):
+    def faux_connecteur():
+        pass
+
+    monkeypatch.setitem(
+        CONNECTEURS_SECURITE,
+        "debian",
+        faux_connecteur,
+    )
+
+    systeme = identifier_systeme("Debian GNU/Linux", "13")
+
+    assert connecteur_disponible(systeme) is True
+
+
+def test_audit_cve_proxmox_conserve_windows_sans_connecteur():
+    inventaire = {
+        "disponible": True,
+        "machines": [
+            {
+                "vmid": 500,
+                "nom": "windows-server",
+                "etat_collecte": "collecte_ok",
+                "nom_os": "Microsoft Windows Server 2022",
+                "version_os": "Microsoft Windows Server 2022",
+                "version_id_os": "21H2",
+                "noyau": "10.0.20348",
+            }
+        ],
+    }
+
+    with (
+        patch(
+            "labpilot.tools.inventaire_os_proxmox",
+            return_value=inventaire,
+        ),
+        patch("labpilot.tools.rechercher_cve") as rechercher_cve_mock,
+    ):
+        resultat = audit_cve_proxmox()
+
+    rechercher_cve_mock.assert_not_called()
+
+    assert resultat["disponible"] is True
+    assert len(resultat["machines"]) == 1
+
+    machine = resultat["machines"][0]
+    assert machine["vmid"] == 500
+    assert machine["cve"] == []
+    assert machine["resultat_cve_normalise"] is None
+    assert machine["etat_audit_cve"] != "terminee"
+
+
+def test_contrat_connecteur_securite_accepte_un_connecteur_callable():
+    def connecteur(systeme):
+        return {
+            "produit": systeme.produit,
+            "version_detectee": systeme.version or "inconnue",
+            "source": "test",
+            "disponible": False,
+            "erreur": "source_indisponible",
+            "resultats": [],
+        }
+
+    contrat: ConnecteurSecurite = connecteur
+    systeme = identifier_systeme("Debian GNU/Linux", "13")
+
+    resultat = contrat(systeme)
+
+    assert resultat["produit"] == "Debian"
+    assert resultat["version_detectee"] == "13"
+    assert resultat["source"] == "test"
+    assert resultat["disponible"] is False
+    assert resultat["resultats"] == []
+
+
+def test_executer_connecteur_securite_appelle_le_connecteur(monkeypatch):
+    def faux_connecteur(systeme):
+        return {
+            "produit": systeme.produit,
+            "version_detectee": systeme.version or "inconnue",
+            "source": "test",
+            "disponible": True,
+            "erreur": None,
+            "resultats": [],
+        }
+
+    monkeypatch.setitem(CONNECTEURS_SECURITE, "debian", faux_connecteur)
+    systeme = identifier_systeme("Debian GNU/Linux", "13")
+
+    resultat = executer_connecteur_securite(systeme)
+
+    assert resultat["disponible"] is True
+    assert resultat["produit"] == "Debian"
+    assert resultat["source"] == "test"
+
+
+def test_executer_connecteur_securite_gere_connecteur_absent():
+    systeme = identifier_systeme("Debian GNU/Linux", "13")
+
+    resultat = executer_connecteur_securite(systeme)
+
+    assert resultat["disponible"] is False
+    assert resultat["erreur"] == "connecteur_indisponible"
+    assert resultat["resultats"] == []
+
+
+def test_executer_connecteur_securite_gere_exception(monkeypatch):
+    def connecteur_en_erreur(systeme):
+        raise RuntimeError("détail interne")
+
+    monkeypatch.setitem(
+        CONNECTEURS_SECURITE,
+        "debian",
+        connecteur_en_erreur,
+    )
+    systeme = identifier_systeme("Debian GNU/Linux", "13")
+
+    resultat = executer_connecteur_securite(systeme)
+
+    assert resultat["disponible"] is False
+    assert resultat["erreur"] == "erreur_execution_connecteur"
+    assert resultat["resultats"] == []
+
+
+
+def test_audit_cve_proxmox_priorise_connecteur_enregistre(monkeypatch):
+    from labpilot.tools import audit_cve_proxmox
+
+    inventaire = {
+        "disponible": True,
+        "machines": [
+            {
+                "vmid": 101,
+                "nom": "vm-debian",
+                "etat_collecte": "collecte_ok",
+                "nom_os": "Debian GNU/Linux",
+                "version_os": "Debian GNU/Linux 13",
+                "version_id_os": "13",
+                "noyau": "6.12.0",
+            }
+        ],
+    }
+
+    appels = []
+
+    def faux_connecteur(systeme):
+        appels.append(systeme)
+        return {
+            "produit": systeme.produit,
+            "version_detectee": systeme.version or "inconnue",
+            "source": "connecteur_test",
+            "disponible": True,
+            "erreur": None,
+            "resultats": [],
+        }
+
+    monkeypatch.setitem(
+        CONNECTEURS_SECURITE,
+        "debian",
+        faux_connecteur,
+    )
+
+    with (
+        patch(
+            "labpilot.tools.inventaire_os_proxmox",
+            return_value=inventaire,
+        ),
+        patch("labpilot.tools.rechercher_cve") as recherche_nvd,
+    ):
+        resultat = audit_cve_proxmox()
+
+    recherche_nvd.assert_not_called()
+    assert len(appels) == 1
+    assert appels[0].produit == "Debian"
+
+    machine = resultat["machines"][0]
+    assert machine["resultat_cve_normalise"]["source"] == "connecteur_test"
+    assert machine["resultat_cve_normalise"]["disponible"] is True
+    assert resultat["nombre_connecteurs_securite_termines"] == 1
+    assert resultat["nombre_recherches_nvd_terminees"] == 0
+    assert resultat["nombre_machines_auditees"] == 0
