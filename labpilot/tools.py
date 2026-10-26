@@ -642,11 +642,41 @@ def audit_cve_proxmox(limite_par_machine: int = 20) -> dict:
             machines_auditees.append(resultat_machine)
             continue
 
+        noyau = machine.get("noyau")
+        nom_machine = machine.get("nom")
+
+        # TrueNAS peut exposer son système sous-jacent Debian via QEMU Guest Agent.
+        # Le suffixe noyau est un indice de produit spécialisé, mais ne donne pas
+        # la version TrueNAS : ne pas interroger la NVD avec la version Debian.
+        truenas_detecte = (
+            isinstance(noyau, str) and "truenas" in noyau.casefold()
+        ) or (
+            isinstance(nom_machine, str)
+            and nom_machine.strip().casefold() in {"truenas", "truenas-scale"}
+        )
+        if truenas_detecte:
+            resultat_machine["produit_cve"] = "TrueNAS"
+            resultat_machine["etat_audit_cve"] = (
+                "ignoree_version_produit_inconnue"
+            )
+            resultat_machine["motif_audit_cve"] = (
+                "TrueNAS détecté, mais sa version produit doit être collectée "
+                "explicitement ; la version Debian sous-jacente n'est pas utilisée."
+            )
+            machines_auditees.append(resultat_machine)
+            continue
+
         version = machine.get("version_id_os") or machine.get("version_os")
         if not isinstance(version, str) or not version.strip():
             resultat_machine["etat_audit_cve"] = "ignoree_version_inconnue"
             machines_auditees.append(resultat_machine)
             continue
+
+        # Conserver une identité produit distincte de la version de l'OS.
+        # Pour Home Assistant OS, le nom communiqué par l'agent est exploitable
+        # lorsqu'il identifie explicitement le produit.
+        resultat_machine["produit_cve"] = nom_os.strip()
+        resultat_machine["version_produit_cve"] = version.strip()
 
         try:
             recherche = rechercher_cve(
