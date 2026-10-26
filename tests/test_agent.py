@@ -1360,3 +1360,75 @@ def test_audit_cve_proxmox_est_enregistre_comme_outil():
 
     assert len(definitions) == 1
     assert "limite_par_machine" in definitions[0]["parameters"]["properties"]
+
+
+
+def test_audit_cve_proxmox_ignore_truenas_sans_version_produit(monkeypatch):
+    inventaire = {
+        "disponible": True,
+        "machines": [
+            {
+                "vmid": 400,
+                "nom": "truenas",
+                "noeud": "pve",
+                "etat_collecte": "collecte_ok",
+                "nom_os": "Debian GNU/Linux",
+                "version_os": "12",
+                "version_id_os": "12",
+                "noyau": "6.12.105-production+truenas",
+            }
+        ],
+    }
+    monkeypatch.setattr(
+        "labpilot.tools.inventaire_os_proxmox",
+        lambda: inventaire,
+    )
+
+    def recherche_interdite(**kwargs):
+        raise AssertionError("La NVD ne doit pas être interrogée pour Debian/TrueNAS")
+
+    monkeypatch.setattr("labpilot.tools.rechercher_cve", recherche_interdite)
+
+    resultat = audit_cve_proxmox()
+
+    machine = resultat["machines"][0]
+    assert machine["etat_audit_cve"] == "ignoree_version_produit_inconnue"
+    assert machine["produit_cve"] == "TrueNAS"
+    assert "version Debian sous-jacente" in machine["motif_audit_cve"]
+    assert machine["cve"] == []
+    assert resultat["nombre_machines_auditees"] == 0
+
+
+def test_audit_cve_proxmox_detecte_truenas_par_nom_machine(monkeypatch):
+    inventaire = {
+        "disponible": True,
+        "machines": [
+            {
+                "vmid": 400,
+                "nom": "TrueNAS",
+                "noeud": "pve",
+                "etat_collecte": "collecte_ok",
+                "nom_os": "Debian GNU/Linux",
+                "version_os": "12",
+                "version_id_os": "12",
+                "noyau": "6.12.105-production",
+            }
+        ],
+    }
+    monkeypatch.setattr(
+        "labpilot.tools.inventaire_os_proxmox",
+        lambda: inventaire,
+    )
+    with monkeypatch.context() as m:
+        m.setattr(
+            "labpilot.tools.rechercher_cve",
+            lambda **kwargs: (_ for _ in ()).throw(
+                AssertionError("La recherche NVD ne doit pas être appelée")
+            ),
+        )
+        resultat = audit_cve_proxmox()
+
+    assert resultat["machines"][0]["produit_cve"] == "TrueNAS"
+    assert resultat["machines"][0]["etat_audit_cve"] == (
+        "ignoree_version_produit_inconnue"
+    )
