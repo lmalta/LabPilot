@@ -346,8 +346,9 @@ L'outil fonctionne en lecture seule. Si l'agent invité ne répond pas, si les i
 
 - seules les VM QEMU en fonctionnement sont prises en compte ;
 - les conteneurs LXC ne sont pas couverts par cet outil ;
-- la collecte des informations OS ne constitue pas une détection de vulnérabilités ;
-- la collecte et la corrélation des CVE avec les versions inventoriées restent à développer.
+- la collecte des informations OS ne constitue pas, à elle seule, une détection de vulnérabilités ;
+- un premier audit recherche des CVE candidates dans NVD pour les OS et versions identifiés ;
+- la vérification de l'applicabilité à partir des CPE, des versions affectées et des avis des fournisseurs reste à développer.
 
 ### Configuration de l'accès
 
@@ -912,7 +913,7 @@ Paramètres :
 - `version` : version à examiner ;
 - `limite` : nombre maximal de résultats, de 1 à 20 (20 par défaut).
 
-Les résultats peuvent inclure l'identifiant CVE, la description en anglais, le score CVSS lorsqu'il est disponible, les dates de publication et de modification, ainsi que les références associées.
+Les résultats peuvent inclure l'identifiant CVE, la description en anglais, le score CVSS lorsqu'il est disponible, les dates de publication et de modification, ainsi que les références associées. L'adaptateur de l'audit expose également une représentation normalisée commune aux futurs connecteurs, tout en conservant les champs historiques utilisés par l'outil.
 
 **Limites importantes :**
 - une recherche par mots-clés ne prouve pas qu'une CVE affecte effectivement le produit installé ;
@@ -937,11 +938,30 @@ L'outil `audit_cve_proxmox` automatise les premières étapes de la recherche de
 **Paramètre :**
 - `limite_par_machine` : nombre maximal de CVE candidates recherchées par machine, de 1 à 20 (20 par défaut).
 
-**États possibles :**
+**États possibles de l'audit :**
 - `terminee` : recherche effectuée ;
 - `ignoree_os_non_identifie` : système d'exploitation non identifié ou collecte incomplète ;
 - `ignoree_version_inconnue` : version du système inconnue ;
 - `erreur_recherche_cve` : recherche impossible ou réponse invalide.
+
+**Résultat CVE normalisé :**
+
+Pour préparer l'intégration de sources spécialisées, les réponses de recherche peuvent être converties vers un contrat commun contenant `produit`, `version_detectee`, `source`, `disponible`, `erreur` et `resultats`. Chaque avis normalisé comprend `identifiant`, `versions_affectees`, `version_corrigee`, `statut`, `preuve` et `date_verification`.
+
+Les statuts actuellement autorisés sont :
+- `candidate` : résultat trouvé par la recherche, applicabilité non confirmée ;
+- `potentiellement_affectee` : hypothèse à examiner, qui nécessite des éléments probants ;
+- `affectee_confirmee` : vulnérabilité confirmée par des preuves adaptées ;
+- `non_affectee` : non-applicabilité établie par des preuves ;
+- `correctif_disponible` : correctif identifié ;
+- `verification_incomplete` : informations insuffisantes pour conclure.
+
+À ce stade, la recherche NVD par mots-clés classe ses résultats comme `candidate`. Le contrat valide la structure et les valeurs de statut autorisées, mais ne vérifie pas encore que les preuves fournies justifient chaque statut. Les statuts de confirmation ne doivent donc pas être attribués automatiquement sur la seule base d'une correspondance de nom ou de version.
+
+**Systèmes spécialisés :**
+- TrueNAS est détecté séparément ; en l'absence de version produit fiable et de connecteur adapté, l'audit évite de traiter son noyau comme une version Debian générique.
+- Home Assistant OS est détecté séparément et ignoré par la recherche NVD générique tant qu'une source spécialisée n'est pas intégrée.
+- Les erreurs et réponses invalides d'une recherche sont normalisées sans interrompre l'audit des autres machines.
 
 **Limites et sécurité :**
 - L'audit porte sur les VM QEMU en fonctionnement ; il ne couvre pas les conteneurs LXC.
@@ -964,9 +984,9 @@ LabPilot possède un premier socle fonctionnel comprenant :
 - une intégration Home Assistant en lecture seule ;
 - une intégration Proxmox en lecture seule ;
 - un inventaire des systèmes d'exploitation des VM QEMU via le QEMU Guest Agent ;
-- une collecte des informations OS en lecture seule, préparant le futur rapprochement avec les CVE ;
+- un premier audit de CVE candidates pour les VM QEMU dont l'OS et la version sont identifiés ;
 - des tests unitaires Python et TypeScript.
 
 L'interprétation du modèle peut rester imparfaite. Les informations techniques doivent être vérifiées à partir des résultats structurés des outils.
 
-La prochaine étape consiste à finaliser la documentation et à consolider les tests de l'intégration Proxmox, avant de poursuivre les autres outils de supervision du Homelab.
+La prochaine étape consiste à renforcer les preuves nécessaires à la validation de l'applicabilité des CVE, puis à intégrer progressivement des sources de sécurité spécialisées pour les produits présents dans le Homelab.
