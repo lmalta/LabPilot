@@ -838,7 +838,8 @@ Les cases cochées correspondent aux fonctionnalités déjà implémentées selo
   - [ ] Compléter et valider l'inventaire des versions des logiciels et services installés.
 - [ ] Collecter les CVE et avis de sécurité depuis des sources fiables.
   - [x] Interroger l'API publique NVD pour rechercher des CVE candidates par produit/version.
-  - [ ] Ajouter et valider des sources spécialisées et avis fournisseurs pour les systèmes présents dans le Homelab.
+  - [x] Intégrer le Debian Security Tracker pour les VM Debian prises en charge (Debian 11, 12 et 13), avec rapprochement sur l'inventaire réel des paquets installés.
+  - [ ] Ajouter et valider d'autres sources spécialisées et avis fournisseurs pour les systèmes présents dans le Homelab.
 - [ ] Identifier les vulnérabilités potentiellement applicables.
   - [x] Distinguer les résultats candidats des vulnérabilités confirmées dans le contrat de résultat.
   - [ ] Vérifier les CPE, versions affectées et preuves avant de conclure sur l'applicabilité.
@@ -858,8 +859,9 @@ Les cases cochées correspondent aux fonctionnalités déjà implémentées selo
 - [x] Normaliser les erreurs et réponses invalides afin qu'un échec sur une machine n'interrompe pas tout l'audit.
 - [x] Détecter séparément TrueNAS et Home Assistant OS pour éviter une recherche générique trompeuse sur un OS sous-jacent.
 - [ ] Vérifier les preuves associées aux statuts de confirmation : la validation structurelle actuelle ne garantit pas à elle seule la justesse d'une conclusion.
-- [ ] Ajouter ou intégrer des connecteurs adaptés à Debian, Nextcloud, TrueNAS, Home Assistant OS et, plus tard, k3s.
-- [x] Exécuter la suite de tests Python après les dernières modifications de l'audit CVE (71 tests réussis lors de la dernière validation locale).
+- [x] Ajouter un connecteur Debian fondé sur le Debian Security Tracker et l'inventaire des paquets via QEMU Guest Agent.
+- [ ] Ajouter ou intégrer des connecteurs adaptés à Nextcloud, TrueNAS, Home Assistant OS et, plus tard, k3s.
+- [x] Exécuter la suite de tests Python après l'intégration du connecteur Debian (129 tests réussis lors de la dernière validation locale).
 
 ### Phase 8 — Audit de sécurité et pentest automatisé
 
@@ -951,13 +953,13 @@ La démarche de sécurité évoluera progressivement : inventaire des systèmes,
 
 ### Audit CVE des VM Proxmox
 
-L'outil `audit_cve_proxmox` automatise les premières étapes de la recherche de vulnérabilités sur les machines virtuelles QEMU en fonctionnement.
+L'outil `audit_cve_proxmox` automatise les premières étapes de la recherche de vulnérabilités sur les machines virtuelles QEMU en fonctionnement. Il privilégie un connecteur de sécurité spécialisé lorsqu'il est enregistré pour le système détecté ; pour Debian, il utilise le Debian Security Tracker et l'inventaire réel des paquets.
 
 **Fonctionnement :**
 1. Collecte les informations du système d'exploitation via `inventaire_os_proxmox` et le QEMU Guest Agent.
 2. Ignore les machines dont l'OS ou la version ne sont pas identifiés.
-3. Interroge la base publique NVD avec `rechercher_cve` pour chaque machine exploitable.
-4. Conserve les résultats et les erreurs individuellement afin qu'un échec de recherche ne bloque pas l'audit des autres machines.
+3. Utilise le connecteur de sécurité enregistré lorsqu'il existe. Pour Debian 11, 12 et 13, collecte les paquets installés via le QEMU Guest Agent puis rapproche leurs paquets sources et versions du Debian Security Tracker. À défaut de connecteur spécialisé, utilise la recherche NVD par produit/version lorsque celle-ci est autorisée.
+4. Conserve les résultats normalisés détaillés, limite séparément la liste résumée affichée et traite les erreurs individuellement afin qu'un échec de recherche ne bloque pas l'audit des autres machines.
 
 **Paramètre :**
 - `limite_par_machine` : nombre maximal de CVE candidates recherchées par machine, de 1 à 20 (20 par défaut).
@@ -966,11 +968,15 @@ L'outil `audit_cve_proxmox` automatise les premières étapes de la recherche de
 - `terminee` : recherche effectuée ;
 - `ignoree_os_non_identifie` : système d'exploitation non identifié ou collecte incomplète ;
 - `ignoree_version_inconnue` : version du système inconnue ;
-- `erreur_recherche_cve` : recherche impossible ou réponse invalide.
+- `erreur_recherche_cve` : recherche NVD impossible ou réponse invalide ;
+- `connecteur_securite_termine` : audit terminé par un connecteur de sécurité spécialisé ;
+- `erreur_connecteur_securite` : connecteur spécialisé indisponible ou en erreur.
 
 **Résultat CVE normalisé :**
 
 Pour préparer l'intégration de sources spécialisées, les réponses de recherche peuvent être converties vers un contrat commun contenant `produit`, `version_detectee`, `source`, `disponible`, `erreur` et `resultats`. Chaque avis normalisé comprend `identifiant`, `versions_affectees`, `version_corrigee`, `statut`, `preuve` et `date_verification`.
+
+Pour Debian, le connecteur conserve notamment le paquet source, la version source installée, les paquets binaires associés et la date de vérification. Les résultats sont dédupliqués par avis CVE et paquet source/version afin d'éviter les répétitions dues à plusieurs paquets binaires issus d'une même source. La liste résumée `cve` est limitée par `limite_par_machine` (20 par défaut), tandis que `resultat_cve_normalise` conserve les résultats détaillés.
 
 Les statuts actuellement autorisés sont :
 - `candidate` : résultat trouvé par la recherche, applicabilité non confirmée ;
@@ -1008,7 +1014,7 @@ LabPilot possède un premier socle fonctionnel comprenant :
 - une intégration Home Assistant en lecture seule ;
 - une intégration Proxmox en lecture seule ;
 - un inventaire des systèmes d'exploitation des VM QEMU via le QEMU Guest Agent ;
-- un premier audit de CVE candidates pour les VM QEMU dont l'OS et la version sont identifiés ;
+- un audit CVE des VM QEMU avec recherche NVD générique et connecteur Debian basé sur l'inventaire des paquets et le Debian Security Tracker ;
 - des tests unitaires Python et TypeScript.
 
 L'interprétation du modèle peut rester imparfaite. Les informations techniques doivent être vérifiées à partir des résultats structurés des outils.
