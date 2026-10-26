@@ -712,11 +712,14 @@ def test_inventaire_os_proxmox_recupere_os_vm():
     }
     informations_os = {
         "data": {
-            "id": "debian",
-            "name": "Debian GNU/Linux",
-            "pretty-name": "Debian GNU/Linux 12 (bookworm)",
-            "version-id": "12",
-            "kernel-release": "6.8.12",
+            "result": {
+                "id": "debian",
+                "name": "Debian GNU/Linux",
+                "pretty-name": "Debian GNU/Linux 13 (trixie)",
+                "version": "13 (trixie)",
+                "version-id": "13",
+                "kernel-release": "6.12.63+deb13-amd64",
+            }
         }
     }
 
@@ -749,8 +752,8 @@ def test_inventaire_os_proxmox_recupere_os_vm():
         resultat = inventaire_os_proxmox()
 
     assert resultat["machines"][0]["vmid"] == 300
-    assert resultat["machines"][0]["nom_os"] == "Debian GNU/Linux 12 (bookworm)"
-    assert resultat["machines"][0]["version_os"] == "12"
+    assert resultat["machines"][0]["nom_os"] == "Debian GNU/Linux 13 (trixie)"
+    assert resultat["machines"][0]["version_os"] == "13"
     assert len(resultat["machines"]) == 1
     assert urlopen.call_count == 2
 
