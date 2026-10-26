@@ -641,6 +641,27 @@ def audit_cve_proxmox(limite_par_machine: int = 20) -> dict:
         ):
             machines_auditees.append(resultat_machine)
             continue
+        noyau = machine.get("noyau")
+        nom_machine = machine.get("nom")
+
+        truenas_detecte = (
+            isinstance(noyau, str) and "truenas" in noyau.casefold()
+        ) or (
+            isinstance(nom_machine, str)
+            and nom_machine.strip().casefold() in {"truenas", "truenas-scale"}
+        )
+
+        if truenas_detecte:
+            resultat_machine["produit_cve"] = "TrueNAS"
+            resultat_machine["etat_audit_cve"] = (
+                "ignoree_version_produit_inconnue"
+            )
+            resultat_machine["motif_audit_cve"] = (
+                "Version réelle de TrueNAS inconnue ; "
+                "la version Debian sous-jacente n'est pas utilisée."
+            )
+            machines_auditees.append(resultat_machine)
+            continue
 
         version = machine.get("version_id_os") or machine.get("version_os")
         if not isinstance(version, str) or not version.strip():

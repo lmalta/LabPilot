@@ -1360,3 +1360,33 @@ def test_audit_cve_proxmox_est_enregistre_comme_outil():
 
     assert len(definitions) == 1
     assert "limite_par_machine" in definitions[0]["parameters"]["properties"]
+
+def test_audit_cve_proxmox_ignore_truenas_sans_version_produit():
+    with (
+        patch(
+            "labpilot.tools.inventaire_os_proxmox",
+            return_value={
+                "disponible": True,
+                "machines": [
+                    {
+                        "vmid": 400,
+                        "nom": "truenas",
+                        "etat_collecte": "collecte_ok",
+                        "nom_os": "Debian GNU/Linux",
+                        "version_os": "Debian GNU/Linux 12",
+                        "version_id_os": "12",
+                        "noyau": "6.12.105-production+truenas",
+                    }
+                ],
+            },
+        ),
+        patch("labpilot.tools.rechercher_cve") as rechercher_cve_mock,
+    ):
+        resultat = audit_cve_proxmox()
+
+    machine = resultat["machines"][0]
+    rechercher_cve_mock.assert_not_called()
+    assert machine["produit_cve"] == "TrueNAS"
+    assert machine["etat_audit_cve"] == "ignoree_version_produit_inconnue"
+    assert "Debian" in machine["motif_audit_cve"]
+    assert machine["cve"] == []
