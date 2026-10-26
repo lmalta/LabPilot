@@ -1294,6 +1294,17 @@ def test_audit_cve_proxmox_continue_apres_erreur_nvd():
             return_value=inventaire,
         ),
         patch(
+            "labpilot.tools.auditer_paquets_debian_proxmox",
+            return_value={
+                "produit": "Debian",
+                "version_detectee": "12",
+                "source": "Debian Security Tracker",
+                "disponible": True,
+                "erreur": None,
+                "resultats": [],
+            },
+        ),
+        patch(
             "labpilot.tools.rechercher_cve",
             side_effect=[
                 RuntimeError("NVD indisponible"),
@@ -1314,23 +1325,28 @@ def test_audit_cve_proxmox_continue_apres_erreur_nvd():
     ):
         resultat = audit_cve_proxmox()
 
-    assert rechercher_cve_mock.call_count == 2
+    assert rechercher_cve_mock.call_count == 1
     assert resultat["disponible"] is True
     assert resultat["nombre_machines_auditees"] == 0
     assert resultat["machines"][0]["etat_audit_cve"] == "erreur_recherche_cve"
-    assert resultat["machines"][1]["etat_audit_cve"] == "recherche_nvd_terminee"
-    assert resultat["machines"][1]["cve"][0]["id"] == "CVE-2025-12345"
+    assert (
+        resultat["machines"][1]["etat_audit_cve"]
+        == "connecteur_securite_termine"
+    )
+    assert resultat["machines"][1]["source_cve"] == "Debian Security Tracker"
+    assert resultat["machines"][1]["cve"] == []
+
+    normalise = resultat["machines"][1]["resultat_cve_normalise"]
+    assert normalise["disponible"] is True
+    assert normalise["source"] == "Debian Security Tracker"
+    assert normalise["resultats"] == []
+
     normalise_erreur = resultat["machines"][0]["resultat_cve_normalise"]
     assert normalise_erreur["disponible"] is False
     assert normalise_erreur["erreur"] == "erreur_recherche_cve"
     assert normalise_erreur["resultats"] == []
     assert normalise_erreur["produit"] == "Ubuntu"
     assert normalise_erreur["version_detectee"] == "24.04"
-
-    normalise = resultat["machines"][1]["resultat_cve_normalise"]
-    assert normalise["disponible"] is True
-    assert normalise["resultats"][0]["identifiant"] == "CVE-2025-12345"
-    assert normalise["resultats"][0]["statut"] == "candidate"
 
 
 def test_audit_cve_proxmox_gere_indisponibilite_proxmox():

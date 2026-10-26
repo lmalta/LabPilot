@@ -21,6 +21,10 @@ from labpilot.security_connectors import (
     executer_connecteur_securite,
 )
 
+from labpilot.debian_security_connector import (
+    auditer_paquets_debian_proxmox,
+)
+
 from labpilot.security_contracts import (
     STATUTS_CVE_AUTORISES,
     valider_resultat_connecteur_cve,
@@ -786,6 +790,69 @@ def audit_cve_proxmox(limite_par_machine: int = 20) -> dict:
             "Ubuntu",
         }
 
+        if (
+            systeme.produit == "Debian"
+            and not connecteur_disponible(systeme)
+        ):
+            noeud = machine.get("noeud")
+            vmid = machine.get("vmid")
+
+            if (
+                not isinstance(noeud, str)
+                or not noeud.strip()
+                or isinstance(vmid, bool)
+                or not isinstance(vmid, int)
+                or vmid <= 0
+                or not isinstance(systeme.version, str)
+                or not systeme.version.strip()
+            ):
+                resultat_connecteur = finaliser_resultat_connecteur_cve({
+                    "produit": "Debian",
+                    "version_detectee": (
+                        systeme.version
+                        if isinstance(systeme.version, str)
+                        and systeme.version.strip()
+                        else "inconnue"
+                    ),
+                    "source": "Debian Security Tracker",
+                    "disponible": False,
+                    "erreur": "contexte_machine_invalide",
+                    "resultats": [],
+                })
+            else:
+                resultat_connecteur = auditer_paquets_debian_proxmox(
+                    noeud.strip(),
+                    vmid,
+                    systeme.version.strip(),
+                )
+
+            resultat_machine["resultat_cve_normalise"] = (
+                resultat_connecteur
+            )
+            resultat_machine["source_cve"] = resultat_connecteur["source"]
+
+            if resultat_connecteur["disponible"]:
+                resultat_machine["cve"] = [
+                    {
+                        "id": avis["identifiant"],
+                        "applicabilite": avis["statut"],
+                    }
+                    for avis in resultat_connecteur["resultats"][:limite_par_machine]
+                ]
+                resultat_machine["etat_audit_cve"] = (
+                    "connecteur_securite_termine"
+                )
+            else:
+                resultat_machine["etat_audit_cve"] = (
+                    "erreur_connecteur_securite"
+                )
+                resultat_machine["erreur_cve"] = (
+                    resultat_connecteur["erreur"]
+                )
+
+            machines_auditees.append(resultat_machine)
+            continue
+
         if connecteur_disponible(systeme):
             resultat_connecteur = executer_connecteur_securite(systeme)
             resultat_machine["resultat_cve_normalise"] = (
@@ -799,7 +866,7 @@ def audit_cve_proxmox(limite_par_machine: int = 20) -> dict:
                         "id": avis["identifiant"],
                         "applicabilite": avis["statut"],
                     }
-                    for avis in resultat_connecteur["resultats"]
+                    for avis in resultat_connecteur["resultats"][:limite_par_machine]
                 ]
                 resultat_machine["etat_audit_cve"] = (
                     "connecteur_securite_termine"
