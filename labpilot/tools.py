@@ -106,6 +106,30 @@ def valider_resultat_connecteur_cve(resultat: dict) -> bool:
         if date_verification is not None and not isinstance(date_verification, str):
             return False
 
+        if date_verification is not None and not date_verification.strip():
+            return False
+
+        preuve = avis["preuve"]
+        versions_affectees = avis["versions_affectees"]
+        version_corrigee = avis["version_corrigee"]
+
+        if avis["statut"] == "affectee_confirmee":
+            if not versions_affectees or not any(p.strip() for p in preuve):
+                return False
+
+        if avis["statut"] == "non_affectee":
+            if not any(p.strip() for p in preuve):
+                return False
+
+        if avis["statut"] == "correctif_disponible":
+            if (
+                not isinstance(version_corrigee, str)
+                or not version_corrigee.strip()
+                or not any(p.strip() for p in preuve)
+            ):
+                return False
+
+
     return True
 
 

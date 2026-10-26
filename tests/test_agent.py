@@ -1540,6 +1540,47 @@ def test_valider_resultat_connecteur_cve_accepte_resultat_valide():
                 }
             ]
         },
+                # Une vulnérabilité confirmée doit avoir des versions affectées
+        # et une preuve justificative.
+        {
+            "resultats": [
+                {
+                    "identifiant": "CVE-2025-12345",
+                    "versions_affectees": [],
+                    "version_corrigee": None,
+                    "statut": "affectee_confirmee",
+                    "preuve": [],
+                    "date_verification": "2026-10-26",
+                }
+            ]
+        },
+        # Un correctif annoncé doit préciser sa version corrigée
+        # et fournir une preuve.
+        {
+            "resultats": [
+                {
+                    "identifiant": "CVE-2025-12345",
+                    "versions_affectees": ["1.0 à 1.2"],
+                    "version_corrigee": None,
+                    "statut": "correctif_disponible",
+                    "preuve": ["https://example.org/advisory"],
+                    "date_verification": "2026-10-26",
+                }
+            ]
+        },
+        # Une non-applicabilité doit également être justifiée.
+        {
+            "resultats": [
+                {
+                    "identifiant": "CVE-2025-12345",
+                    "versions_affectees": [],
+                    "version_corrigee": None,
+                    "statut": "non_affectee",
+                    "preuve": [],
+                    "date_verification": "2026-10-26",
+                }
+            ]
+        },
     ],
 )
 def test_valider_resultat_connecteur_cve_rejette_resultat_invalide(
