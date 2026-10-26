@@ -753,6 +753,8 @@ La sécurité doit reposer sur des contrôles effectifs :
 
 ## 🗺️ Feuille de route
 
+Les cases cochées correspondent aux fonctionnalités déjà implémentées selon le code et la documentation disponibles. Une fonctionnalité partielle ou dont la validation complète reste à faire n'est pas déclarée terminée.
+
 ### Phase 1 — Fondations
 
 - [x] Créer le dépôt GitHub.
@@ -829,13 +831,35 @@ La sécurité doit reposer sur des contrôles effectifs :
 
 ### Phase 7 — Veille de sécurité du Homelab
 
+**État : première brique d'audit CVE implémentée ; validation de l'applicabilité et automatisation encore à développer.**
+
 - [ ] Inventorier les composants du Homelab et leurs versions.
+  - [x] Récupérer les informations OS des VM QEMU en fonctionnement via le QEMU Guest Agent.
+  - [ ] Compléter et valider l'inventaire des versions des logiciels et services installés.
 - [ ] Collecter les CVE et avis de sécurité depuis des sources fiables.
+  - [x] Interroger l'API publique NVD pour rechercher des CVE candidates par produit/version.
+  - [ ] Ajouter et valider des sources spécialisées et avis fournisseurs pour les systèmes présents dans le Homelab.
 - [ ] Identifier les vulnérabilités potentiellement applicables.
+  - [x] Distinguer les résultats candidats des vulnérabilités confirmées dans le contrat de résultat.
+  - [ ] Vérifier les CPE, versions affectées et preuves avant de conclure sur l'applicabilité.
 - [ ] Vérifier les versions affectées et les correctifs disponibles.
+  - [ ] Intégrer les règles et données propres aux distributions et produits concernés.
+  - [ ] Vérifier les versions corrigées et les avis de sécurité des fournisseurs.
 - [ ] Générer des rapports de vulnérabilités priorisés.
+  - [ ] Définir la priorisation selon la sévérité, l'exposition et le contexte Homelab.
+  - [ ] Produire un rapport exploitable avec les preuves, les incertitudes et les recommandations.
 - [ ] Automatiser les contrôles périodiques et les rapports.
+  - [ ] Définir une planification, la gestion des erreurs et l'historique des audits.
 - [ ] Préparer des recommandations de remédiation sans appliquer automatiquement les actions risquées.
+
+**Travaux techniques déjà réalisés :**
+- [x] Normaliser la structure des résultats CVE et conserver les champs historiques nécessaires à la compatibilité.
+- [x] Valider la structure du contrat et les statuts autorisés.
+- [x] Normaliser les erreurs et réponses invalides afin qu'un échec sur une machine n'interrompe pas tout l'audit.
+- [x] Détecter séparément TrueNAS et Home Assistant OS pour éviter une recherche générique trompeuse sur un OS sous-jacent.
+- [ ] Vérifier les preuves associées aux statuts de confirmation : la validation structurelle actuelle ne garantit pas à elle seule la justesse d'une conclusion.
+- [ ] Ajouter ou intégrer des connecteurs adaptés à Debian, Nextcloud, TrueNAS, Home Assistant OS et, plus tard, k3s.
+- [x] Exécuter la suite de tests Python après les dernières modifications de l'audit CVE (71 tests réussis lors de la dernière validation locale).
 
 ### Phase 8 — Audit de sécurité et pentest automatisé
 
