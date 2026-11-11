@@ -348,7 +348,7 @@ L'outil fonctionne en lecture seule. Si l'agent invité ne répond pas, si les i
 - les conteneurs LXC ne sont pas couverts par cet outil ;
 - la collecte des informations OS ne constitue pas, à elle seule, une détection de vulnérabilités ;
 - un premier audit recherche des CVE candidates dans NVD pour les OS et versions identifiés ;
-- la vérification de l'applicabilité à partir des CPE, des versions affectées et des avis des fournisseurs reste à développer.
+- le contrat valide désormais la cohérence des preuves structurées associées aux statuts CVE ; la vérification complète de l'applicabilité à partir des CPE, des versions affectées et des avis des fournisseurs reste à développer.
 
 ### Configuration de l'accès
 
@@ -858,10 +858,12 @@ Les cases cochées correspondent aux fonctionnalités déjà implémentées selo
 - [x] Valider la structure du contrat et les statuts autorisés.
 - [x] Normaliser les erreurs et réponses invalides afin qu'un échec sur une machine n'interrompe pas tout l'audit.
 - [x] Détecter séparément TrueNAS et Home Assistant OS pour éviter une recherche générique trompeuse sur un OS sous-jacent.
-- [ ] Vérifier les preuves associées aux statuts de confirmation : la validation structurelle actuelle ne garantit pas à elle seule la justesse d'une conclusion.
+- [x] Ajouter la validation structurelle et la cohérence des preuves associées aux statuts CVE.
+- [ ] Vérifier automatiquement l'applicabilité réelle à partir des CPE, des plages de versions affectées et des avis fournisseurs.
 - [x] Ajouter un connecteur Debian fondé sur le Debian Security Tracker et l'inventaire des paquets via QEMU Guest Agent.
 - [ ] Ajouter ou intégrer des connecteurs adaptés à Nextcloud, TrueNAS, Home Assistant OS et, plus tard, k3s.
-- [x] Exécuter la suite de tests Python après l'intégration du connecteur Debian (129 tests réussis lors de la dernière validation locale).
+- [x] Exécuter la suite de tests Python après l'ajout des preuves structurées (147 tests réussis lors de la dernière validation locale).
+- [x] Vérifier la compilation TypeScript et la suite de tests TypeScript (39 tests réussis lors de la dernière validation locale).
 
 ### Phase 8 — Audit de sécurité et pentest automatisé
 
@@ -974,19 +976,39 @@ L'outil `audit_cve_proxmox` automatise les premières étapes de la recherche de
 
 **Résultat CVE normalisé :**
 
-Pour préparer l'intégration de sources spécialisées, les réponses de recherche peuvent être converties vers un contrat commun contenant `produit`, `version_detectee`, `source`, `disponible`, `erreur` et `resultats`. Chaque avis normalisé comprend `identifiant`, `versions_affectees`, `version_corrigee`, `statut`, `preuve` et `date_verification`.
+Pour préparer l'intégration de sources spécialisées, les réponses de recherche peuvent être converties vers un contrat commun contenant `produit`, `version_detectee`, `source`, `disponible`, `erreur` et `resultats`. Chaque avis normalisé comprend `identifiant`, `versions_affectees`, `version_corrigee`, `statut`, `preuve` et `date_verification`. Le champ historique `preuve` reste une liste de chaînes pour préserver la compatibilité. Le champ complémentaire `preuves_structurees` fournit la traçabilité détaillée.
 
 Pour Debian, le connecteur conserve notamment le paquet source, la version source installée, les paquets binaires associés et la date de vérification. Les résultats sont dédupliqués par avis CVE et paquet source/version afin d'éviter les répétitions dues à plusieurs paquets binaires issus d'une même source. La liste résumée `cve` est limitée par `limite_par_machine` (20 par défaut), tandis que `resultat_cve_normalise` conserve les résultats détaillés.
 
 Les statuts actuellement autorisés sont :
-- `candidate` : résultat trouvé par la recherche, applicabilité non confirmée ;
-- `potentiellement_affectee` : hypothèse à examiner, qui nécessite des éléments probants ;
-- `affectee_confirmee` : vulnérabilité confirmée par des preuves adaptées ;
-- `non_affectee` : non-applicabilité établie par des preuves ;
-- `correctif_disponible` : correctif identifié ;
-- `verification_incomplete` : informations insuffisantes pour conclure.
+- `candidate` : résultat documentaire ou référence trouvé ; aucune applicabilité n'est démontrée ;
+- `potentiellement_affectee` : une source officielle indique une vulnérabilité ouverte, mais son applicabilité à la version installée reste à vérifier ;
+- `affectee_confirmee` : une preuve explicite d'applicabilité à la version installée est présente et cohérente avec la preuve de cette version ;
+- `non_affectee` : une preuve officielle de non-applicabilité est fournie. Pour Debian, le connecteur utilise notamment `fixed_version=0` dans le contexte de la distribution examinée ;
+- `correctif_disponible` : une version corrigée est identifiée et concorde avec une preuve structurée ;
+- `verification_incomplete` : les données sont insuffisantes ou contradictoires pour conclure.
 
-À ce stade, la recherche NVD par mots-clés classe ses résultats comme `candidate`. Le contrat valide la structure et les valeurs de statut autorisées, mais ne vérifie pas encore que les preuves fournies justifient chaque statut. Les statuts de confirmation ne doivent donc pas être attribués automatiquement sur la seule base d'une correspondance de nom ou de version.
+### Preuves CVE structurées
+
+Le contrat conserve `preuve` sous forme de liste de chaînes pour préserver la compatibilité avec les consommateurs existants. Il ajoute `preuves_structurees`, une liste d'objets comportant obligatoirement quatre champs :
+
+- `source` : origine de l'information (par exemple Debian Security Tracker, NVD ou inventaire QEMU Guest Agent) ;
+- `type` : nature de la preuve ;
+- `valeur` : valeur ou élément observé ;
+- `contexte` : dictionnaire de précisions permettant d'interpréter et de rapprocher la preuve.
+
+Les types actuellement reconnus comprennent `reference`, `statut_officiel`, `version_corrigee`, `version_installee`, `comparaison_versions`, `non_applicabilite` et `applicabilite_confirmee`.
+
+Le validateur contrôle la forme des preuves et certaines cohérences nécessaires au statut annoncé :
+- `affectee_confirmee` exige une preuve `applicabilite_confirmee` et une preuve `version_installee` concordantes ; une simple référence ne suffit pas ;
+- `non_affectee` exige une preuve `non_applicabilite` avec la valeur `fixed_version=0` ;
+- `correctif_disponible` exige une version corrigée non vide et une preuve `version_corrigee` de même valeur.
+
+Pour Debian, un statut officiel `open` reste `potentiellement_affectee` : il ne permet jamais, à lui seul, de confirmer l'applicabilité à la version installée. De même, la comparaison avec une version corrigée ne suffit pas à confirmer qu'une CVE affecte effectivement cette version.
+
+**Limite du validateur :** il vérifie la structure et la cohérence interne des informations déclarées. Il ne consulte pas indépendamment les sources et ne garantit donc pas la véracité d'une preuve externe. La vérification technique complète des CPE, plages de versions affectées et avis fournisseurs reste nécessaire avant une conclusion définitive.
+
+À ce stade, la recherche NVD par mots-clés classe toujours ses résultats comme `candidate` ; ses références documentaires ne constituent pas des preuves d'applicabilité.
 
 **Systèmes spécialisés :**
 - TrueNAS est détecté séparément ; en l'absence de version produit fiable et de connecteur adapté, l'audit évite de traiter son noyau comme une version Debian générique.
@@ -1019,4 +1041,4 @@ LabPilot possède un premier socle fonctionnel comprenant :
 
 L'interprétation du modèle peut rester imparfaite. Les informations techniques doivent être vérifiées à partir des résultats structurés des outils.
 
-La prochaine étape consiste à renforcer les preuves nécessaires à la validation de l'applicabilité des CVE, puis à intégrer progressivement des sources de sécurité spécialisées pour les produits présents dans le Homelab.
+La validation structurelle des preuves CVE est désormais en place. La prochaine étape consiste à vérifier techniquement l'applicabilité à partir des CPE, des plages de versions affectées et des avis fournisseurs, puis à intégrer progressivement des sources spécialisées pour les produits présents dans le Homelab.
