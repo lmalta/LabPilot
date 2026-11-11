@@ -373,6 +373,13 @@ def rapprocher_avis_debian_paquet(
     for entree in avis_normalises:
         statut = entree["statut"]
         version_corrigee = entree["version_corrigee"]
+
+        contexte = {
+            "distribution": distribution,
+            "paquet_source": paquet_source,
+            "version_installee": version_source_installee,
+        }
+
         preuve = [
             "Source : Debian Security Tracker (export JSON).",
             f"Distribution examinée : {distribution}.",
@@ -381,7 +388,29 @@ def rapprocher_avis_debian_paquet(
             f"Statut officiel : {entree['statut_officiel']!r}.",
         ]
 
+        preuves_structurees = [
+            {
+                "source": "Debian Security Tracker",
+                "type": "statut_officiel",
+                "valeur": entree["statut_officiel"],
+                "contexte": contexte.copy(),
+            },
+            {
+                "source": "Inventaire Debian via QEMU Guest Agent",
+                "type": "version_installee",
+                "valeur": version_source_installee,
+                "contexte": contexte.copy(),
+            },
+        ]
+
         if statut == "correctif_disponible" and version_corrigee:
+            preuves_structurees.append({
+                "source": "Debian Security Tracker",
+                "type": "version_corrigee",
+                "valeur": version_corrigee,
+                "contexte": contexte.copy(),
+            })
+
             try:
                 comparaison = comparer_versions_debian(
                     version_source_installee,
@@ -393,13 +422,26 @@ def rapprocher_avis_debian_paquet(
                     "Comparaison impossible : version Debian invalide."
                 )
             else:
+                preuves_structurees.append({
+                    "source": "Comparateur de versions Debian",
+                    "type": "comparaison_versions",
+                    "valeur": (
+                        "version_installee_inferieure"
+                        if comparaison < 0
+                        else "version_installee_superieure_ou_egale"
+                    ),
+                    "contexte": {
+                        **contexte,
+                        "version_corrigee": version_corrigee,
+                        "resultat_comparaison": comparaison,
+                    },
+                })
+
                 if comparaison < 0:
                     preuve.append(
                         f"La version corrigée publiée est {version_corrigee}."
                     )
                 else:
-                    # La comparaison à fixed_version seule ne permet pas
-                    # d'affirmer l'applicabilité ni l'absence de risque.
                     statut = "verification_incomplete"
                     preuve.append(
                         "La version installée n'est pas antérieure à "
@@ -407,14 +449,22 @@ def rapprocher_avis_debian_paquet(
                     )
 
         elif statut == "non_affectee":
+            preuves_structurees.append({
+                "source": "Debian Security Tracker",
+                "type": "non_applicabilite",
+                "valeur": "fixed_version=0",
+                "contexte": contexte.copy(),
+            })
             preuve.append(
                 "Le tracker indique fixed_version=0 pour cette distribution."
             )
+
         elif statut == "potentiellement_affectee":
             preuve.append(
                 "Le tracker indique un statut open ; l'applicabilité "
                 "à la version installée reste à vérifier."
             )
+
         else:
             statut = "verification_incomplete"
             preuve.append(
@@ -428,6 +478,7 @@ def rapprocher_avis_debian_paquet(
             "version_corrigee": version_corrigee,
             "statut": statut,
             "preuve": preuve,
+            "preuves_structurees": preuves_structurees,
             "date_verification": None,
         })
 
