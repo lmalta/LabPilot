@@ -117,12 +117,26 @@ def adapter_resultat_nvd_cve(
             resultat["erreur"] = "reponse_invalide"
             return finaliser_resultat_connecteur_cve(resultat)
 
+        preuves_structurees = [
+            {
+                "source": "NVD",
+                "type": "reference",
+                "valeur": reference,
+                "contexte": {
+                    "identifiant_cve": identifiant,
+                },
+            }
+            for reference in references
+            if reference.strip()
+        ]
+
         avis_normalises.append({
             "identifiant": identifiant,
             "versions_affectees": [],
             "version_corrigee": None,
             "statut": "candidate",
             "preuve": references,
+            "preuves_structurees": preuves_structurees,
             "date_verification": datetime.now().astimezone().date().isoformat(),
         })
 

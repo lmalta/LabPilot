@@ -10,6 +10,103 @@ STATUTS_CVE_AUTORISES = frozenset({
     "verification_incomplete",
 })
 
+TYPES_PREUVES_CVE_AUTORISES = frozenset({
+    "reference",
+    "statut_officiel",
+    "version_corrigee",
+    "version_installee",
+    "comparaison_versions",
+    "non_applicabilite",
+    "applicabilite_confirmee",
+})
+
+
+def _valider_preuves_structurees(avis: dict) -> bool:
+    """Vérifie la structure et la cohérence des preuves d'un avis CVE."""
+    preuves = avis.get("preuves_structurees", [])
+
+    if not isinstance(preuves, list):
+        return False
+
+    for preuve in preuves:
+        if not isinstance(preuve, dict):
+            return False
+
+        if not all(
+            isinstance(preuve.get(cle), str) and preuve[cle].strip()
+            for cle in ("source", "type", "valeur")
+        ):
+            return False
+
+        if preuve["type"] not in TYPES_PREUVES_CVE_AUTORISES:
+            return False
+
+        if not isinstance(preuve.get("contexte"), dict):
+            return False
+
+    statut = avis.get("statut")
+
+    if statut == "affectee_confirmee":
+        preuves_applicabilite = [
+            preuve
+            for preuve in preuves
+            if preuve["type"] == "applicabilite_confirmee"
+        ]
+        preuves_versions = [
+            preuve
+            for preuve in preuves
+            if preuve["type"] == "version_installee"
+        ]
+
+        version_avis = avis.get("version_source_installee")
+
+        if not preuves_applicabilite or not preuves_versions:
+            return False
+
+        for preuve in preuves_applicabilite:
+            version_contexte = preuve["contexte"].get("version_installee")
+
+            if (
+                not isinstance(version_contexte, str)
+                or not version_contexte.strip()
+            ):
+                continue
+
+            if not any(
+                version["valeur"] == version_contexte
+                and version["contexte"].get("version_installee") == version_contexte
+                for version in preuves_versions
+            ):
+                continue
+
+            if version_avis is not None and version_avis != version_contexte:
+                continue
+
+            return True
+
+        return False
+
+    if statut == "non_affectee":
+        return any(
+            preuve["type"] == "non_applicabilite"
+            and preuve["valeur"] == "fixed_version=0"
+            for preuve in preuves
+        )
+
+    if statut == "correctif_disponible":
+        version_corrigee = avis.get("version_corrigee")
+        return (
+            isinstance(version_corrigee, str)
+            and bool(version_corrigee.strip())
+            and any(
+                preuve["type"] == "version_corrigee"
+                and preuve["valeur"] == version_corrigee
+                for preuve in preuves
+            )
+        )
+
+    return True
+
 
 def valider_resultat_connecteur_cve(resultat: dict) -> bool:
     """Valide la structure commune d'un résultat de connecteur CVE."""
@@ -63,6 +160,9 @@ def valider_resultat_connecteur_cve(resultat: dict) -> bool:
 
         statut = avis.get("statut")
         if not isinstance(statut, str) or statut not in STATUTS_CVE_AUTORISES:
+            return False
+
+        if not _valider_preuves_structurees(avis):
             return False
 
         if not isinstance(avis.get("versions_affectees"), list):
